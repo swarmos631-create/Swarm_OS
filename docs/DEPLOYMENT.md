@@ -80,8 +80,8 @@ Serverless mode switches on automatically when `VERCEL=1` (set by the platform):
 
 ### Limits to check for your plan
 
-* **Cron frequency:** `vercel.json` schedules the cron every 30 minutes. The Hobby plan allows only daily crons,
-  so change it to, for example, `"0 6 * * *"` there; data then refreshes on *Sync now* or once a day.
+* **Cron frequency:** `vercel.json` schedules the cron once a day (`"0 6 * * *"`), which the Hobby plan allows.
+  On Pro you can run it more often, for example every 30 minutes (`"*/30 * * * *"`). Between runs, data refreshes on *Sync now*.
 * **Function duration:** 300 s needs Fluid compute (the default for new projects). Lower `maxDuration` and
   `SWARMOS_CRON_BUDGET_SECONDS` together if your plan caps it lower.
 * **Bundle size:** scikit-learn, SciPy and NumPy make the Python bundle large. Vercel's Python limit is 500 MB
