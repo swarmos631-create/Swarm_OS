@@ -1,22 +1,15 @@
-import "maplibre-gl/dist/maplibre-gl.css";
-
 import { useQuery } from "@tanstack/react-query";
-import * as maplibregl from "maplibre-gl";
 import type { GeoJSONSource, MapGeoJSONFeature } from "maplibre-gl";
-// MapLibre v6 resolves its worker relative to its own module URL, which bundling breaks; ship it as an asset instead.
-import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "../api/client";
+import { Compass, ensureBuildings, MapControls, maplibregl, set3D, STYLE_URL, webglAvailable } from "../components/map/mapkit";
 import { EmptyState, ErrorState, ProvenanceBadge, SeverityBadge } from "../components/ui";
 import { fmtTime, titleCase } from "../lib/format";
 import { Icon } from "../lib/icons";
 import { useCity } from "../state/city";
 import { useOnline } from "../state/ui";
 
-maplibregl.setWorkerUrl(workerUrl);
-
-const STYLE_URL = import.meta.env.VITE_MAP_STYLE_URL ?? "https://tiles.openfreemap.org/styles/dark";
 const DEFAULT_LAYERS = ["incidents", "earthquake", "hospital", "fire_station", "traffic_sensors", "water_sensors"];
 
 const LAYER_COLORS: Record<string, string> = {
@@ -31,25 +24,18 @@ const SEV_COLORS = { low: "#60a5fa", moderate: "#fbbf24", high: "#fb923c", criti
 interface Layer { id: string; label: string; group: string; count: number; provenance: (string | null)[] }
 type FC = GeoJSON.FeatureCollection<GeoJSON.Point, Record<string, any>>;
 
-function webglAvailable(): boolean {
-  try {
-    const c = document.createElement("canvas");
-    return !!(c.getContext("webgl2") || c.getContext("webgl"));
-  } catch {
-    return false;
-  }
-}
-
 export default function MapPage() {
   const { cityId, city } = useCity();
   const online = useOnline();
   const container = useRef<HTMLDivElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+  const [mapObj, setMapObj] = useState<maplibregl.Map | null>(null);
   const [ready, setReady] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>(DEFAULT_LAYERS);
   const [detail, setDetail] = useState<Record<string, any> | null>(null);
-  const [mode3d, setMode3d] = useState(false);
+  const [mode3d, setMode3d] = useState(true);
   const [search, setSearch] = useState("");
   const hasGL = useMemo(webglAvailable, []);
 
@@ -81,25 +67,26 @@ export default function MapPage() {
       return;
     }
     mapRef.current = map;
-    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "bottom-right");
+    setMapObj(map);
     map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
     map.on("error", (e: maplibregl.ErrorEvent) => {
       const msg = e?.error?.message ?? "";
       if (/style|Failed to fetch|NetworkError/i.test(msg)) setMapError("Base map tiles could not be loaded (offline or tile server unavailable). Data layers below may still be listed.");
     });
     map.on("load", () => {
+      ensureBuildings(map);
       map.addSource("ops", { type: "geojson", data: { type: "FeatureCollection", features: [] }, cluster: true, clusterRadius: 46, clusterMaxZoom: 13 });
       map.addLayer({
         id: "clusters", type: "circle", source: "ops", filter: ["has", "point_count"],
         paint: {
-          "circle-color": "rgba(34,211,238,0.22)", "circle-stroke-color": "#22d3ee", "circle-stroke-width": 1.5,
+          "circle-color": "rgba(228,242,138,0.18)", "circle-stroke-color": "#e4f28a", "circle-stroke-width": 1.5,
           "circle-radius": ["step", ["get", "point_count"], 14, 20, 19, 100, 25],
         },
       });
       map.addLayer({
         id: "cluster-count", type: "symbol", source: "ops", filter: ["has", "point_count"],
         layout: { "text-field": ["get", "point_count_abbreviated"], "text-font": ["Noto Sans Regular"], "text-size": 11 },
-        paint: { "text-color": "#e6edf7" },
+        paint: { "text-color": "#f4f4f5" },
       });
       map.addLayer({
         id: "points", type: "circle", source: "ops", filter: ["!", ["has", "point_count"]],
@@ -108,7 +95,7 @@ export default function MapPage() {
           "circle-color": ["case",
             ["==", ["get", "layer"], "incidents"], ["match", ["get", "severity"], "critical", SEV_COLORS.critical, "high", SEV_COLORS.high, "moderate", SEV_COLORS.moderate, SEV_COLORS.low],
             LAYER_MATCH],
-          "circle-stroke-color": ["case", ["==", ["get", "provenance"], "demo"], "#fbbf24", "#0b1220"],
+          "circle-stroke-color": ["case", ["==", ["get", "provenance"], "demo"], "#fbbf24", "#111113"],
           "circle-stroke-width": ["case", ["==", ["get", "provenance"], "demo"], 2, 1.2],
           "circle-opacity": 0.92,
         },
@@ -129,7 +116,7 @@ export default function MapPage() {
       }
       setReady(true);
     });
-    return () => { map.remove(); mapRef.current = null; setReady(false); };
+    return () => { map.remove(); mapRef.current = null; setMapObj(null); setReady(false); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasGL, city?.id ? "has-city" : "no-city"]);
 
@@ -153,22 +140,7 @@ export default function MapPage() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    const hasSource = !!map.getSource("openmaptiles");
-    if (mode3d && hasSource && !map.getLayer("buildings-3d")) {
-      map.addLayer({
-        id: "buildings-3d", type: "fill-extrusion", source: "openmaptiles", "source-layer": "building", minzoom: 13,
-        paint: {
-          "fill-extrusion-color": ["interpolate", ["linear"], ["coalesce", ["get", "render_height"], 0], 0, "#13213b", 40, "#1e3a5f", 120, "#2c5b8a"],
-          "fill-extrusion-height": ["coalesce", ["get", "render_height"], 0],
-          "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
-          "fill-extrusion-opacity": 0.85,
-        },
-      }, "clusters");
-      map.easeTo({ pitch: 58, bearing: -18, zoom: Math.max(map.getZoom(), 14.5), duration: 900 });
-    } else if (!mode3d && map.getLayer("buildings-3d")) {
-      map.removeLayer("buildings-3d");
-      map.easeTo({ pitch: 0, bearing: 0, duration: 700 });
-    }
+    set3D(map, mode3d);
   }, [mode3d, ready]);
 
   const searchHits = useMemo(() => {
@@ -206,7 +178,7 @@ export default function MapPage() {
       {!online && <div className="notice offline"><Icon name="wifiOff" />Offline: only previously cached map tiles can be shown.</div>}
       {mapError && <div className="notice error"><Icon name="alert" />{mapError}</div>}
 
-      <div className="map-wrap" data-testid="ops-map">
+      <div className="map-wrap" data-testid="ops-map" ref={wrapRef}>
         <div ref={container} style={{ position: "absolute", inset: 0 }} aria-label={`Interactive map of ${city?.name}`} role="region" />
         <div className="map-overlay map-layers">
           <div className="field" style={{ marginBottom: 8, position: "relative" }}>
@@ -271,6 +243,10 @@ export default function MapPage() {
             </dl>
           </div>
         )}
+
+        <Compass map={mapObj} />
+        <MapControls map={mapObj} mode3d={mode3d} onToggle3d={() => setMode3d((m) => !m)} fullscreenTarget={wrapRef}
+          onFit={() => city && mapObj?.fitBounds(city.bbox as [number, number, number, number], { padding: 20, duration: 900 })} />
 
         <div className="map-overlay map-legend legend hide-sm">
           {Object.entries(SEV_COLORS).map(([k, c]) => <span key={k}><i style={{ background: c, borderRadius: "50%" }} />{k}</span>)}
