@@ -10,8 +10,10 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 
 import { ApiError } from "./api/client";
+import { citiesQuery, dashboardQuery } from "./api/queries";
 import { App } from "./App";
 import { initServiceWorker } from "./components/layout/PwaControls";
+import { rememberedCity } from "./state/city";
 import { SessionProvider } from "./state/session";
 import { ToastProvider } from "./state/ui";
 
@@ -25,6 +27,12 @@ const queryClient = new QueryClient({
     mutations: { networkMode: "online" },
   },
 });
+
+// Start the first screen's requests together instead of one after another (session → cities → dashboard): each
+// sequential round trip to a distant API region adds visible delay. Signed out, these simply fail with 401.
+void queryClient.prefetchQuery(citiesQuery);
+const bootCity = window.location.pathname.match(/^\/c\/([^/]+)/)?.[1] ?? rememberedCity();
+if (bootCity) void queryClient.prefetchQuery(dashboardQuery(decodeURIComponent(bootCity)));
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

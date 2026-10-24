@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, type ReactNode } from "react";
 import { useParams } from "react-router-dom";
 
-import { api } from "../api/client";
+import { citiesQuery } from "../api/queries";
 import type { City } from "../api/types";
 
 const KEY = "swarmos.city";
@@ -24,7 +24,7 @@ export function rememberedCity(): string | null {
 }
 
 export function useCities() {
-  return useQuery({ queryKey: ["cities"], queryFn: () => api<{ items: City[]; total: number }>("/cities"), staleTime: 10 * 60_000 });
+  return useQuery(citiesQuery);
 }
 
 interface CityValue {
