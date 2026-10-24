@@ -18,14 +18,17 @@ export async function initServiceWorker() {
   updateSW = registerSW({
     immediate: true,
     onNeedRefresh() {
-      // The update prompt lives in the signed-in shell. With no shell mounted (boot, error or login screen)
-      // there is no work to lose, so apply the new version at once instead of leaving a stale build in place.
-      if (listeners.size === 0) {
-        void updateSW?.(true);
-        return;
-      }
+      // Never reload while someone is looking at the page: show the "Update available" button in the shell, and
+      // apply the new version on its own only once the tab is in the background (nothing is being read or typed).
+      if (needRefresh) return;
       needRefresh = true;
       listeners.forEach((l) => l());
+      const applyWhenHidden = () => {
+        if (document.visibilityState !== "hidden") return;
+        document.removeEventListener("visibilitychange", applyWhenHidden);
+        void updateSW?.(true);
+      };
+      document.addEventListener("visibilitychange", applyWhenHidden);
     },
   });
 }
