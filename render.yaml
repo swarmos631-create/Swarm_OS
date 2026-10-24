@@ -1,0 +1,26 @@
+# Render Blueprint: the SwarmOS API (FastAPI + embedded job worker) as a web service in Singapore, next to the
+# Neon database (ap-southeast-1). The PWA stays on Vercel, which proxies /api/* here (see vercel.json).
+services:
+  - type: web
+    name: swarmos-api
+    runtime: python
+    region: singapore
+    plan: free  # free instances sleep after 15 idle minutes (first request then takes ~1 min); "starter" stays awake
+    rootDir: backend
+    buildCommand: pip install --upgrade pip && pip install -e ".[ml]"
+    startCommand: swarmos migrate && swarmos serve --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health/live
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.13.5"
+      - key: SWARMOS_ENV
+        value: production
+      - key: SWARMOS_DATABASE_URL
+        sync: false  # paste the Neon connection string (postgresql://…?sslmode=require) when creating the Blueprint
+      - key: SWARMOS_AUTH_DISABLED
+        value: "true"  # no sign-in screen; set to false to require accounts again
+      - key: SWARMOS_JOB_MODE
+        value: worker
+      - key: SWARMOS_WORKER_EMBEDDED
+        value: "true"
