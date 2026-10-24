@@ -16,3 +16,6 @@ frontend/dev-dist
 frontend/test-results
 frontend/playwright-report
 backend/tests
+# The API runs on Render (render.yaml); Vercel only builds the PWA in frontend/.
+backend
+ml
