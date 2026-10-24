@@ -18,6 +18,12 @@ export async function initServiceWorker() {
   updateSW = registerSW({
     immediate: true,
     onNeedRefresh() {
+      // The update prompt lives in the signed-in shell. With no shell mounted (boot, error or login screen)
+      // there is no work to lose, so apply the new version at once instead of leaving a stale build in place.
+      if (listeners.size === 0) {
+        void updateSW?.(true);
+        return;
+      }
       needRefresh = true;
       listeners.forEach((l) => l());
     },

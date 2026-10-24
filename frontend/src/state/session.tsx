@@ -16,13 +16,15 @@ interface SessionValue {
 
 const SessionCtx = createContext<SessionValue | null>(null);
 const RANK: Record<Role, number> = { viewer: 1, operator: 2, admin: 3 };
+const PERMANENT_FAULTS = new Set(["misconfigured", "database_not_migrated"]);
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
   const meQ = useQuery({
     queryKey: ["me"],
     queryFn: () => api<Me>("/auth/me"),
-    retry: (n, e) => !(e instanceof ApiError && e.status === 401) && n < 2,
+    // Signed-out (401) and deployment faults that a retry cannot fix are shown at once.
+    retry: (n, e) => !(e instanceof ApiError && (e.status === 401 || PERMANENT_FAULTS.has(e.code))) && n < 2,
     staleTime: 5 * 60_000,
   });
   const [me, setMe] = useState<Me | null>(null);
