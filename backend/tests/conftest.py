@@ -27,7 +27,7 @@ os.environ.update({
     "SWARMOS_OLLAMA_URL": "",
     "SWARMOS_LLAMACPP_URL": "",
 })
-for var in ("SWARMOS_OGD_API_KEY", "DATABASE_URL", "POSTGRES_URL", "CRON_SECRET", "VERCEL"):
+for var in ("SWARMOS_OGD_API_KEY", "SWARMOS_DATABASE_DATABASE_URL", "DATABASE_URL", "POSTGRES_URL", "CRON_SECRET", "VERCEL"):
     os.environ.pop(var, None)
 # Tests rewrite training configs, so they work on a private copy of the packaged configs.
 shutil.copytree(REPO / "backend" / "swarmos" / "ml" / "configs", _TMP / "ml" / "configs")
