@@ -1,0 +1,154 @@
+"""Typed, validated application configuration.
+
+All settings come from environment variables (prefix ``SWARMOS_``) or a ``.env`` file. Validation errors are
+raised at startup with actionable messages instead of failing later at request time.
+"""
+
+from __future__ import annotations
+
+import ipaddress
+from functools import lru_cache
+from pathlib import Path
+from typing import Annotated, Literal
+from urllib.parse import urlparse
+
+from pydantic import Field, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+CsvList = Annotated[list[str], NoDecode]
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _is_loopback(url: str) -> bool:
+    host = urlparse(url).hostname or ""
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="SWARMOS_",
+        env_file=(str(REPO_ROOT / ".env"), ".env"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    env: Literal["development", "test", "production"] = "development"
+    log_level: str = "INFO"
+
+    database_url: str = f"sqlite:///{REPO_ROOT / 'var' / 'swarmos.db'}"
+
+    # Security
+    session_ttl_hours: int = Field(default=12, ge=1, le=24 * 30)
+    cookie_secure: bool | None = None  # defaults to True in production
+    cors_origins: CsvList = Field(default_factory=list)
+    trusted_hosts: CsvList = Field(default_factory=lambda: ["*"])
+    login_rate_limit_per_minute: int = 10
+    task_rate_limit_per_minute: int = 30
+
+    # Data
+    demo_mode: bool = True
+    demo_pilot_cities: CsvList = Field(default_factory=lambda: ["bengaluru", "mumbai", "delhi"])
+    http_timeout_seconds: float = 15.0
+    http_user_agent: str = "SwarmOS/0.1 (+https://github.com/swarmos631-create/Swarm_OS)"
+    sync_enabled: bool = True
+    sync_interval_minutes: int = Field(default=30, ge=5)
+    sync_cities: CsvList = Field(default_factory=lambda: ["bengaluru", "mumbai", "delhi"])
+
+    open_meteo_base_url: str = "https://api.open-meteo.com/v1/forecast"
+    open_meteo_aq_base_url: str = "https://air-quality-api.open-meteo.com/v1/air-quality"
+    usgs_feed_url: str = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_week.geojson"
+    overpass_urls: CsvList = Field(
+        default_factory=lambda: [
+            "https://overpass-api.de/api/interpreter",
+            "https://overpass.private.coffee/api/interpreter",
+        ]
+    )
+    ogd_api_key: str | None = None  # data.gov.in key — required for CPCB station feed
+    ogd_cpcb_resource_id: str = "3b01bcb8-0b14-4abf-b6f2-c1bfd384ba69"
+    imd_api_base_url: str | None = None  # IMD access is by arrangement; unset == unavailable
+
+    # Worker / orchestration
+    worker_embedded: bool = True
+    worker_poll_seconds: float = 1.0
+    agent_max_concurrency: int = Field(default=6, ge=1, le=32)
+    agent_default_timeout_seconds: float = Field(default=20.0, gt=0)
+    task_max_agents: int = Field(default=14, ge=1, le=50)
+
+    # Local AI runtime — loopback only unless explicitly allowed
+    ollama_url: str | None = None  # e.g. http://127.0.0.1:11434
+    ollama_model: str = "llama3.2:3b"
+    llamacpp_url: str | None = None  # e.g. http://127.0.0.1:8080 (llama.cpp server)
+    allow_remote_model_hosts: bool = False
+    model_request_timeout_seconds: float = 30.0
+    model_max_concurrency: int = Field(default=2, ge=1, le=8)
+    llm_narratives_enabled: bool = False
+
+    # ML paths
+    ml_root: Path = REPO_ROOT / "ml"
+
+    # Dev bootstrap
+    dev_seed_password: str | None = None
+
+    @field_validator("cors_origins", "trusted_hosts", "demo_pilot_cities", "sync_cities", "overpass_urls", mode="before")
+    @classmethod
+    def _split_csv(cls, v: object) -> object:
+        if isinstance(v, str):
+            v = v.strip()
+            if v.startswith("["):
+                import json
+
+                return json.loads(v)
+            return [s.strip() for s in v.split(",") if s.strip()]
+        return v
+
+    @model_validator(mode="after")
+    def _validate(self) -> Settings:
+        if self.cookie_secure is None:
+            self.cookie_secure = self.env == "production"
+        for name in ("ollama_url", "llamacpp_url"):
+            url = getattr(self, name)
+            if url and not self.allow_remote_model_hosts and not _is_loopback(url):
+                raise ValueError(
+                    f"SWARMOS_{name.upper()}={url!r} is not a loopback address. Local model endpoints must run on "
+                    "this host. Set SWARMOS_ALLOW_REMOTE_MODEL_HOSTS=true only for a self-hosted inference server "
+                    "you operate."
+                )
+        if self.env == "production":
+            if "*" in self.cors_origins:
+                raise ValueError("SWARMOS_CORS_ORIGINS must not contain '*' in production.")
+            if self.dev_seed_password:
+                raise ValueError("SWARMOS_DEV_SEED_PASSWORD must not be set in production.")
+            if not self.cookie_secure:
+                raise ValueError("SWARMOS_COOKIE_SECURE must be true in production (HTTPS).")
+        return self
+
+    @property
+    def is_sqlite(self) -> bool:
+        return self.database_url.startswith("sqlite")
+
+    @property
+    def datasets_dir(self) -> Path:
+        return self.ml_root / "datasets"
+
+    @property
+    def artifacts_dir(self) -> Path:
+        return self.ml_root / "artifacts"
+
+    @property
+    def ml_configs_dir(self) -> Path:
+        return self.ml_root / "configs"
+
+    @property
+    def reports_dir(self) -> Path:
+        return self.ml_root / "reports"
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

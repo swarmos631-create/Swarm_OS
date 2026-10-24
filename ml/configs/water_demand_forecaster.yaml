@@ -1,0 +1,14 @@
+model_name: water_demand_forecaster
+description: Direct 24-hour-ahead hourly city water demand forecaster.
+task_type: forecasting
+algorithm: hist_gradient_boosting_regressor
+unit: m3/h
+used_by: [water_demand_analyst]
+dataset:
+  name: water_demand_v1
+  generator: water_demand
+  schema: timeseries
+  params: {hours: 2880, seed: 13, start: "2025-01-01T00:00:00+00:00"}
+split: {method: time_based, test_days: 14, val_days: 7, seed: 42}
+hyperparams: {max_iter: 300, learning_rate: 0.05, max_leaf_nodes: 31}
+gate: {metric: mae, lower_is_better: true, margin: 0.05}

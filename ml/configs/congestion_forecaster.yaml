@@ -1,0 +1,14 @@
+model_name: congestion_forecaster
+description: Direct 24-hour-ahead city-mean corridor speed forecaster.
+task_type: forecasting
+algorithm: hist_gradient_boosting_regressor
+unit: km/h
+used_by: [congestion_forecast_agent]
+dataset:
+  name: corridor_speed_v1
+  generator: corridor_speed
+  schema: timeseries
+  params: {hours: 2880, seed: 17, start: "2025-01-01T00:00:00+00:00"}
+split: {method: time_based, test_days: 14, val_days: 7, seed: 42}
+hyperparams: {max_iter: 300, learning_rate: 0.05, max_leaf_nodes: 31}
+gate: {metric: mae, lower_is_better: true, margin: 0.05}

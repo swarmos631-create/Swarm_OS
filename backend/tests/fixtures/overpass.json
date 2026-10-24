@@ -1,0 +1,52 @@
+{
+ "elements": [
+  {
+   "type": "node",
+   "id": 1,
+   "lat": 12.95,
+   "lon": 77.6,
+   "tags": {
+    "amenity": "hospital",
+    "name": "Sample Hospital",
+    "wheelchair": "yes"
+   }
+  },
+  {
+   "type": "way",
+   "id": 2,
+   "center": {
+    "lat": 12.96,
+    "lon": 77.61
+   },
+   "tags": {
+    "amenity": "fire_station"
+   }
+  },
+  {
+   "type": "node",
+   "id": 3,
+   "lat": 12.97,
+   "lon": 77.62,
+   "tags": {
+    "amenity": "school",
+    "name": "Sample School"
+   }
+  },
+  {
+   "type": "node",
+   "id": 4,
+   "lat": 12.98,
+   "lon": 77.63,
+   "tags": {
+    "amenity": "bench"
+   }
+  },
+  {
+   "type": "way",
+   "id": 5,
+   "tags": {
+    "amenity": "hospital"
+   }
+  }
+ ]
+}

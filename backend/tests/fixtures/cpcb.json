@@ -1,0 +1,34 @@
+{
+ "total": 3,
+ "records": [
+  {
+   "station": "Silk Board, Bengaluru - KSPCB",
+   "city": "Bengaluru",
+   "last_update": "24-10-2026 12:00:00",
+   "pollutant_id": "PM2.5",
+   "avg_value": "42",
+   "min_value": "30",
+   "max_value": "60",
+   "latitude": "12.917",
+   "longitude": "77.623"
+  },
+  {
+   "station": "Hebbal, Bengaluru - KSPCB",
+   "city": "Bengaluru",
+   "last_update": "24-10-2026 12:00:00",
+   "pollutant_id": "NO2",
+   "pollutant_avg": "31",
+   "pollutant_min": "20",
+   "pollutant_max": "44",
+   "latitude": "13.03",
+   "longitude": "77.59"
+  },
+  {
+   "station": "Broken",
+   "city": "Bengaluru",
+   "last_update": "not a date",
+   "pollutant_id": "PM10",
+   "avg_value": "NA"
+  }
+ ]
+}

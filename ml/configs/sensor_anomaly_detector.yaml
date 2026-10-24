@@ -1,0 +1,13 @@
+model_name: sensor_anomaly_detector
+description: Isolation Forest over grid frequency/voltage/load/demand-change features.
+task_type: anomaly_detection
+algorithm: isolation_forest
+used_by: [grid_anomaly_agent]
+dataset:
+  name: grid_telemetry_v1
+  generator: grid_telemetry
+  schema: grid_telemetry
+  params: {hours: 2160, seed: 23, anomaly_rate: 0.03, start: "2025-01-01T00:00:00+00:00"}
+split: {method: time_ordered, test: 0.3, seed: 42}
+hyperparams: {n_estimators: 200, contamination: 0.03, train_on_normal_only: true}
+gate: {metric: f1, margin: 0.0, min_value: 0.5}

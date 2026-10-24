@@ -1,0 +1,246 @@
+"""Development bootstrap: catalog, source registry, dev accounts, sample documents and DEMO fixtures.
+
+Every demo record is tagged ``provenance='demo'`` and comes from the ``swarmos-demo`` source. Demo data is
+generated only for the configured pilot cities and only when SWARMOS_DEMO_MODE=true.
+"""
+
+from __future__ import annotations
+
+import os
+import random
+import secrets
+import string
+from datetime import timedelta
+from importlib import resources
+from pathlib import Path
+
+from sqlalchemy import delete, select
+from sqlalchemy.orm import Session
+
+from swarmos.ai.retrieval import ingest
+from swarmos.cities import sync_catalog
+from swarmos.config import REPO_ROOT, Settings
+from swarmos.core.security import hash_password
+from swarmos.db import utcnow
+from swarmos.integrations.base import NormalizedFeature, NormalizedMeasurement, SyncPayload
+from swarmos.integrations.sync import persist_payload, sync_registry
+from swarmos.ml import complaints, synthetic
+from swarmos.ml.features import floor_hour
+from swarmos.models import (
+    City,
+    GeoFeature,
+    Incident,
+    IncidentEvent,
+    Measurement,
+    ServiceRequest,
+    User,
+    UserCity,
+)
+
+DEMO = "swarmos-demo"
+SCALE = {"bengaluru": 1.0, "mumbai": 1.2, "delhi": 1.7}
+DEV_USERS = [
+    ("admin@swarmos.local", "Dev Admin", "admin", True),
+    ("operator@swarmos.local", "Dev Operator", "operator", True),
+    ("viewer@swarmos.local", "Dev Viewer", "viewer", False),
+]
+
+
+def _gen_password() -> str:
+    alphabet = string.ascii_letters + string.digits
+    while True:
+        p = "".join(secrets.choice(alphabet) for _ in range(20))
+        if any(c.islower() for c in p) and any(c.isupper() for c in p) and any(c.isdigit() for c in p):
+            return p
+
+
+def seed_users(db: Session, settings: Settings) -> Path | None:
+    """Create development accounts once. The password is never logged; it is written to a 0600 file."""
+    if settings.env == "production":
+        raise RuntimeError("Refusing to create development accounts in production. Use 'swarmos create-user'.")
+    if db.scalar(select(User).limit(1)):
+        return None
+    password = settings.dev_seed_password or _gen_password()
+    for email, name, role, all_cities in DEV_USERS:
+        u = User(email=email, display_name=name, role=role, all_cities=all_cities, password_hash=hash_password(password))
+        if not all_cities:
+            u.cities = [UserCity(city_id=c) for c in settings.demo_pilot_cities]
+        db.add(u)
+    if settings.dev_seed_password:
+        return None
+    path = REPO_ROOT / "var" / "dev-credentials.txt"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("SwarmOS development accounts (local only — do not commit)\n"
+                    + "".join(f"{e} ({r}): {password}\n" for e, _, r, _ in DEV_USERS))
+    os.chmod(path, 0o600)
+    return path
+
+
+def seed_documents(db: Session) -> int:
+    n = 0
+    folder = resources.files("swarmos.demo").joinpath("documents")
+    meta = {"incident_escalation_sop.md": "internal"}
+    for entry in sorted(folder.iterdir(), key=lambda p: p.name):
+        if not entry.name.endswith(".md"):
+            continue
+        text = entry.read_text(encoding="utf-8")
+        title = text.splitlines()[0].lstrip("# ").strip()
+        ingest(db, title=title, text=text, source=f"swarmos sample: {entry.name}", classification=meta.get(entry.name, "public"),
+               license="CC0-1.0 (SwarmOS sample)", city_id=None, uploaded_by=None, is_synthetic=True)
+        n += 1
+    return n
+
+
+def _offset(city: City, rng: random.Random, spread: float = 0.08) -> tuple[float, float]:
+    return round(city.lat + rng.uniform(-spread, spread), 5), round(city.lon + rng.uniform(-spread, spread), 5)
+
+
+def seed_demo_city(db: Session, city: City) -> dict[str, int]:
+    rng = random.Random(f"demo:{city.id}")
+    seed = sum(ord(c) for c in city.id)
+    scale = SCALE.get(city.id, 1.0)
+    now = floor_hour(utcnow())
+    start14 = now - timedelta(hours=24 * 14 - 1)
+    # wipe previous demo rows for this city (only demo provenance)
+    db.execute(delete(Measurement).where(Measurement.city_id == city.id, Measurement.source_id == DEMO))
+    db.execute(delete(GeoFeature).where(GeoFeature.city_id == city.id, GeoFeature.source_id == DEMO))
+    db.execute(delete(Incident).where(Incident.city_id == city.id, Incident.provenance == "demo"))
+    db.execute(delete(ServiceRequest).where(ServiceRequest.city_id == city.id, ServiceRequest.provenance == "demo"))
+
+    m: list[NormalizedMeasurement] = []
+
+    def add_series(category: str, metric: str, unit: str, times, vals, entity: str = "city", lat=None, lon=None, meta=None):  # type: ignore[no-untyped-def]
+        for t, v in zip(times, vals, strict=True):
+            m.append(NormalizedMeasurement(category=category, metric=metric, value=round(float(v), 4), unit=unit, observed_at=t,
+                                           entity=entity, lat=lat, lon=lon, meta=meta or {}))
+
+    # Traffic corridors (generic names — synthetic data must not be attributed to real roads)
+    for i, label in enumerate(["Corridor A (north arterial)", "Corridor B (east arterial)", "Corridor C (ring road segment)",
+                               "Corridor D (CBD approach)", "Corridor E (south arterial)"]):
+        free = rng.uniform(38, 55)
+        t, v = synthetic.corridor_speed(start14, 24 * 14, seed + i, freeflow=free)
+        if i == 3:
+            v[-3:] *= 0.45  # injected current congestion
+        lat, lon = _offset(city, rng)
+        add_series("traffic", "speed_kmph", "km/h", t, v, entity=label, lat=lat, lon=lon)
+        add_series("traffic", "freeflow_speed_kmph", "km/h", [now], [free], entity=label, lat=lat, lon=lon, meta={"lat": lat, "lon": lon})
+
+    # Water: city demand, DMAs (one leak), quality sites (one exceedance)
+    t, v = synthetic.water_demand(start14, 24 * 14, seed + 10, base_m3h=55000 * scale)
+    add_series("water", "water_demand_m3h", "m³/h", t, v)
+    for i in range(4):
+        leak_from = 24 * 12 if i == 2 else None
+        t, v = synthetic.dma_flow(start14, 24 * 14, seed + 20 + i, base=rng.uniform(220, 420), leak_from_hour=leak_from, leak_m3h=120)
+        lat, lon = _offset(city, rng)
+        add_series("water", "flow_m3h", "m³/h", t, v, entity=f"DMA-{i + 1:02d}", lat=lat, lon=lon)
+    t48 = [now - timedelta(hours=h) for h in range(47, -1, -1)]
+    for i, site in enumerate(["Treatment plant outlet", "Reservoir R2", "Distribution node N7"]):
+        lat, lon = _offset(city, rng)
+        ph = [rng.uniform(7.0, 7.8) for _ in t48]
+        turb = [rng.uniform(0.3, 0.9) for _ in t48]
+        cl = [rng.uniform(0.3, 0.8) for _ in t48]
+        if i == 2:
+            turb[-4:] = [6.2, 6.8, 7.1, 6.5]
+            cl[-4:] = [0.12, 0.1, 0.11, 0.09]
+        add_series("water_quality", "ph", "pH", t48, ph, entity=site, lat=lat, lon=lon)
+        add_series("water_quality", "turbidity_ntu", "NTU", t48, turb, entity=site, lat=lat, lon=lon)
+        add_series("water_quality", "residual_chlorine_mgl", "mg/L", t48, cl, entity=site, lat=lat, lon=lon)
+
+    # Energy
+    t, v = synthetic.energy_demand(start14, 24 * 14, seed + 30, base_mw=3000 * scale)
+    add_series("energy", "power_demand_mw", "MW", t, v)
+    t24 = [now - timedelta(hours=h) for h in range(23, -1, -1)]
+    freq = [50 + rng.gauss(0, 0.02) for _ in t24]
+    freq[-6] = 49.82
+    add_series("energy", "grid_frequency_hz", "Hz", t24, freq)
+    for i, f in enumerate(["Feeder-A", "Feeder-B", "Feeder-C", "Feeder-D"]):
+        volt = [1 + rng.gauss(0, 0.01) for _ in t24]
+        load = [rng.uniform(50, 85) for _ in t24]
+        if i == 1:
+            volt[-1], load[-1] = 0.91, 108
+        add_series("energy", "feeder_voltage_pu", "pu", t24, volt, entity=f)
+        add_series("energy", "feeder_load_pct", "%", t24, load, entity=f)
+
+    # Wastewater
+    for i, cap in enumerate([150, 90, 60]):
+        stp = f"STP-{i + 1}"
+        util = [1.08] * 24 if i == 2 else [rng.uniform(0.6, 0.9) for _ in t24]
+        add_series("wastewater", "stp_inflow_mld", "MLD", t24, [cap * u for u in util], entity=stp)
+        add_series("wastewater", "stp_capacity_mld", "MLD", [now], [cap], entity=stp)
+        add_series("wastewater", "effluent_bod_mgl", "mg/L", [now], [26 if i == 1 else rng.uniform(8, 18)], entity=stp)
+
+    # Budget (₹ crore) and field resources
+    for dept, alloc in [("Roads & Infrastructure", 1200), ("Solid Waste Management", 650), ("Storm Water Drains", 420),
+                        ("Water Supply", 900), ("Health", 380), ("Electrical", 210)]:
+        a = alloc * scale
+        add_series("budget", "budget_allocated_cr", "₹ crore", [now], [a], entity=dept)
+        add_series("budget", "budget_spent_cr", "₹ crore", [now], [a * rng.uniform(0.25, 1.08)], entity=dept)
+    for dept in ["Fire & Emergency", "Health", "Storm Water Drains", "Water Supply", "Electrical", "Traffic Police", "Engineering",
+                 "Solid Waste Management"]:
+        add_series("resources", "available_crews", "crews", [now], [rng.randint(1, 4)], entity=dept)
+
+    feats = []
+    for i in range(12):
+        layer = "asset_bridge" if i < 4 else "asset_road"
+        lat, lon = _offset(city, rng)
+        feats.append(NormalizedFeature(layer=layer, external_id=f"demo-asset-{i}", name=f"{'Flyover' if i < 4 else 'Road segment'} D{i + 1}",
+                                       lat=lat, lon=lon, properties={"condition_index": rng.randint(15, 95),
+                                                                     "last_inspected": f"202{rng.randint(2, 5)}-0{rng.randint(1, 9)}-15"}))
+    n = persist_payload(db, DEMO, city, SyncPayload(measurements=m, features=feats), provenance="demo")
+
+    # Incidents
+    templates = [("Fallen tree blocking carriageway", "road", "high"), ("Waterlogging at underpass", "flooding", "high"),
+                 ("Transformer fire reported", "fire", "critical"), ("Multi-vehicle collision", "road", "high"),
+                 ("Power outage affecting ward", "energy", "moderate"), ("Water main burst", "water", "high"),
+                 ("Garbage accumulation near market", "garbage", "low"), ("Building wall collapse risk", "structural", "critical"),
+                 ("Traffic signal malfunction", "mobility", "moderate"), ("Open excavation without barricade", "construction", "moderate"),
+                 ("Medical emergency at bus station", "medical", "high"), ("Sewage overflow on street", "water", "moderate")]
+    incidents = 0
+    for i in range(18):
+        title, cat, sev = templates[i % len(templates)]
+        lat, lon = _offset(city, rng, 0.06)
+        reported = now - timedelta(hours=rng.uniform(0.3, 70))
+        status = rng.choice(["open", "open", "acknowledged", "in_progress", "resolved"])
+        inc = Incident(city_id=city.id, title=f"[DEMO] {title} — Ward {i % 12 + 1}", description="Synthetic demonstration incident.", category=cat,
+                       severity=sev, status=status, lat=lat, lon=lon, provenance="demo", source=DEMO, reported_at=reported,
+                       resolved_at=reported + timedelta(hours=rng.uniform(1, 8)) if status == "resolved" else None)
+        db.add(inc)
+        db.flush()
+        db.add(IncidentEvent(incident_id=inc.id, kind="created", to_status="open", note="Demo fixture", created_at=reported))
+        incidents += 1
+    # Correlated cluster (three incidents close in space and time)
+    clat, clon = _offset(city, rng, 0.03)
+    for j, (title, cat, sev) in enumerate([("Waterlogging on arterial road", "flooding", "high"), ("Vehicle stalled in flood water", "road", "moderate"),
+                                           ("Drain overflow into homes", "flooding", "high")]):
+        db.add(Incident(city_id=city.id, title=f"[DEMO] {title}", description="Synthetic demonstration incident.", category=cat, severity=sev,
+                        status="open", lat=clat + j * 0.002, lon=clon + j * 0.002, provenance="demo", source=DEMO,
+                        reported_at=now - timedelta(hours=1 + j * 0.5)))
+        incidents += 1
+
+    # Service requests
+    rows = complaints.synthesize(140, seed=seed)
+    for r in rows:
+        created = now - timedelta(hours=rng.uniform(1, 24 * 45))
+        resolved = None
+        if rng.random() < 0.6:
+            resolved = created + timedelta(hours=rng.uniform(4, 24 * 10))
+            if resolved > now:
+                resolved = None
+        lat, lon = _offset(city, rng, 0.1)
+        db.add(ServiceRequest(city_id=city.id, text=f"[DEMO] {r['text']}", category=r["category"], classified_by="demo-label",
+                              status="resolved" if resolved else "open", ward=f"Ward {rng.randint(1, 12)}", lat=lat, lon=lon,
+                              provenance="demo", created_at=created, resolved_at=resolved))
+    return {"records": n, "incidents": incidents, "service_requests": len(rows)}
+
+
+def bootstrap(db: Session, settings: Settings, *, demo: bool | None = None) -> dict[str, object]:
+    out: dict[str, object] = {"cities": sync_catalog(db, settings.demo_pilot_cities)}
+    db.flush()
+    sync_registry(db, settings)
+    db.flush()
+    cred = seed_users(db, settings) if settings.env != "production" else None
+    out["credentials_file"] = str(cred) if cred else None
+    out["documents"] = seed_documents(db)
+    if (settings.demo_mode if demo is None else demo):
+        out["demo"] = {c: seed_demo_city(db, db.get(City, c)) for c in settings.demo_pilot_cities if db.get(City, c)}  # type: ignore[arg-type]
+    return out

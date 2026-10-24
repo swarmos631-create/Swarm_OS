@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Node
+node_modules/
+frontend/dist/
+frontend/dev-dist/
+frontend/playwright-report/
+frontend/test-results/
+
+# Runtime data, secrets, credentials — never commit
+var/
+.env
+*.db
+*.db-wal
+*.db-shm
+
+# ML artifacts and generated reports (large / machine-specific). Configs and small synthetic datasets ARE committed.
+ml/artifacts/*
+!ml/artifacts/.gitkeep
+ml/reports/*
+!ml/reports/.gitkeep
+ml/datasets/raw/*
+!ml/datasets/raw/.gitkeep
+ml/datasets/processed/*
+!ml/datasets/processed/.gitkeep
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.tsbuildinfo

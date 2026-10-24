@@ -1,0 +1,28 @@
+{
+ "elements": [
+  {
+   "type": "count",
+   "tags": {
+    "ways": "1200"
+   }
+  },
+  {
+   "type": "count",
+   "tags": {
+    "ways": "300"
+   }
+  },
+  {
+   "type": "count",
+   "tags": {
+    "ways": "150"
+   }
+  },
+  {
+   "type": "count",
+   "tags": {
+    "ways": "40"
+   }
+  }
+ ]
+}

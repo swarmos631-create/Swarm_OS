@@ -1,0 +1,1113 @@
+{
+ "version": 1,
+ "source": "SwarmOS curated catalog. Coordinates are approximate city-centre points (WGS84). Viewports are approximate and are NOT administrative boundaries.",
+ "cities": [
+  {
+   "id": "mumbai",
+   "name": "Mumbai",
+   "state": "Maharashtra",
+   "lat": 19.076,
+   "lon": 72.8777,
+   "timezone": "Asia/Kolkata",
+   "zoom": 10.5,
+   "population": 18394912,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": [
+    "Bombay"
+   ]
+  },
+  {
+   "id": "delhi",
+   "name": "Delhi",
+   "state": "Delhi (NCT)",
+   "lat": 28.6139,
+   "lon": 77.209,
+   "timezone": "Asia/Kolkata",
+   "zoom": 10.3,
+   "population": 16349831,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": [
+    "New Delhi"
+   ]
+  },
+  {
+   "id": "kolkata",
+   "name": "Kolkata",
+   "state": "West Bengal",
+   "lat": 22.5726,
+   "lon": 88.3639,
+   "timezone": "Asia/Kolkata",
+   "zoom": 10.8,
+   "population": 14112536,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": [
+    "Calcutta"
+   ]
+  },
+  {
+   "id": "chennai",
+   "name": "Chennai",
+   "state": "Tamil Nadu",
+   "lat": 13.0827,
+   "lon": 80.2707,
+   "timezone": "Asia/Kolkata",
+   "zoom": 10.8,
+   "population": 8696010,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": [
+    "Madras"
+   ]
+  },
+  {
+   "id": "bengaluru",
+   "name": "Bengaluru",
+   "state": "Karnataka",
+   "lat": 12.9716,
+   "lon": 77.5946,
+   "timezone": "Asia/Kolkata",
+   "zoom": 10.8,
+   "population": 8520435,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": [
+    "Bangalore"
+   ]
+  },
+  {
+   "id": "hyderabad",
+   "name": "Hyderabad",
+   "state": "Telangana",
+   "lat": 17.385,
+   "lon": 78.4867,
+   "timezone": "Asia/Kolkata",
+   "zoom": 10.8,
+   "population": 7677018,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": []
+  },
+  {
+   "id": "ahmedabad",
+   "name": "Ahmedabad",
+   "state": "Gujarat",
+   "lat": 23.0225,
+   "lon": 72.5714,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 6357693,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": [
+    "Amdavad"
+   ]
+  },
+  {
+   "id": "pune",
+   "name": "Pune",
+   "state": "Maharashtra",
+   "lat": 18.5204,
+   "lon": 73.8567,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 5057709,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": [
+    "Poona"
+   ]
+  },
+  {
+   "id": "surat",
+   "name": "Surat",
+   "state": "Gujarat",
+   "lat": 21.1702,
+   "lon": 72.8311,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 4591246,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": []
+  },
+  {
+   "id": "jaipur",
+   "name": "Jaipur",
+   "state": "Rajasthan",
+   "lat": 26.9124,
+   "lon": 75.7873,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 3046163,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": []
+  },
+  {
+   "id": "kanpur",
+   "name": "Kanpur",
+   "state": "Uttar Pradesh",
+   "lat": 26.4499,
+   "lon": 80.3319,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 2920496,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": [
+    "Cawnpore"
+   ]
+  },
+  {
+   "id": "lucknow",
+   "name": "Lucknow",
+   "state": "Uttar Pradesh",
+   "lat": 26.8467,
+   "lon": 80.9462,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 2902920,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": []
+  },
+  {
+   "id": "nagpur",
+   "name": "Nagpur",
+   "state": "Maharashtra",
+   "lat": 21.1458,
+   "lon": 79.0882,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 2497870,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": []
+  },
+  {
+   "id": "indore",
+   "name": "Indore",
+   "state": "Madhya Pradesh",
+   "lat": 22.7196,
+   "lon": 75.8577,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 2170295,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": []
+  },
+  {
+   "id": "coimbatore",
+   "name": "Coimbatore",
+   "state": "Tamil Nadu",
+   "lat": 11.0168,
+   "lon": 76.9558,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 2136916,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": [
+    "Kovai"
+   ]
+  },
+  {
+   "id": "kochi",
+   "name": "Kochi",
+   "state": "Kerala",
+   "lat": 9.9312,
+   "lon": 76.2673,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 2119724,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": [
+    "Cochin"
+   ]
+  },
+  {
+   "id": "patna",
+   "name": "Patna",
+   "state": "Bihar",
+   "lat": 25.5941,
+   "lon": 85.1376,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 2049156,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": []
+  },
+  {
+   "id": "kozhikode",
+   "name": "Kozhikode",
+   "state": "Kerala",
+   "lat": 11.2588,
+   "lon": 75.7804,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11.5,
+   "population": 2030519,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": [
+    "Calicut"
+   ]
+  },
+  {
+   "id": "bhopal",
+   "name": "Bhopal",
+   "state": "Madhya Pradesh",
+   "lat": 23.2599,
+   "lon": 77.4126,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 1886100,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": []
+  },
+  {
+   "id": "thrissur",
+   "name": "Thrissur",
+   "state": "Kerala",
+   "lat": 10.5276,
+   "lon": 76.2144,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11.5,
+   "population": 1854783,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": [
+    "Trichur"
+   ]
+  },
+  {
+   "id": "vadodara",
+   "name": "Vadodara",
+   "state": "Gujarat",
+   "lat": 22.3072,
+   "lon": 73.1812,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 1817191,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": [
+    "Baroda"
+   ]
+  },
+  {
+   "id": "agra",
+   "name": "Agra",
+   "state": "Uttar Pradesh",
+   "lat": 27.1767,
+   "lon": 78.0081,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 1760285,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": []
+  },
+  {
+   "id": "visakhapatnam",
+   "name": "Visakhapatnam",
+   "state": "Andhra Pradesh",
+   "lat": 17.6868,
+   "lon": 83.2185,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 1728128,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": [
+    "Vizag"
+   ]
+  },
+  {
+   "id": "thiruvananthapuram",
+   "name": "Thiruvananthapuram",
+   "state": "Kerala",
+   "lat": 8.5241,
+   "lon": 76.9366,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 1687406,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": [
+    "Trivandrum"
+   ]
+  },
+  {
+   "id": "ludhiana",
+   "name": "Ludhiana",
+   "state": "Punjab",
+   "lat": 30.901,
+   "lon": 75.8573,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 1618879,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": []
+  },
+  {
+   "id": "nashik",
+   "name": "Nashik",
+   "state": "Maharashtra",
+   "lat": 19.9975,
+   "lon": 73.7898,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 1562769,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": [
+    "Nasik"
+   ]
+  },
+  {
+   "id": "vijayawada",
+   "name": "Vijayawada",
+   "state": "Andhra Pradesh",
+   "lat": 16.5062,
+   "lon": 80.648,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 1476931,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": []
+  },
+  {
+   "id": "madurai",
+   "name": "Madurai",
+   "state": "Tamil Nadu",
+   "lat": 9.9252,
+   "lon": 78.1198,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 1465625,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": []
+  },
+  {
+   "id": "varanasi",
+   "name": "Varanasi",
+   "state": "Uttar Pradesh",
+   "lat": 25.3176,
+   "lon": 82.9739,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 1435113,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": [
+    "Benares",
+    "Kashi"
+   ]
+  },
+  {
+   "id": "meerut",
+   "name": "Meerut",
+   "state": "Uttar Pradesh",
+   "lat": 28.9845,
+   "lon": 77.7064,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 1420902,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": []
+  },
+  {
+   "id": "faridabad",
+   "name": "Faridabad",
+   "state": "Haryana",
+   "lat": 28.4089,
+   "lon": 77.3178,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 1414050,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": []
+  },
+  {
+   "id": "rajkot",
+   "name": "Rajkot",
+   "state": "Gujarat",
+   "lat": 22.3039,
+   "lon": 70.8022,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 1390640,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": []
+  },
+  {
+   "id": "jamshedpur",
+   "name": "Jamshedpur",
+   "state": "Jharkhand",
+   "lat": 22.8046,
+   "lon": 86.2029,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 1339438,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": [
+    "Tatanagar"
+   ]
+  },
+  {
+   "id": "srinagar",
+   "name": "Srinagar",
+   "state": "Jammu and Kashmir",
+   "lat": 34.0837,
+   "lon": 74.7973,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 1273312,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": []
+  },
+  {
+   "id": "jabalpur",
+   "name": "Jabalpur",
+   "state": "Madhya Pradesh",
+   "lat": 23.1815,
+   "lon": 79.9864,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 1268848,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": []
+  },
+  {
+   "id": "asansol",
+   "name": "Asansol",
+   "state": "West Bengal",
+   "lat": 23.6739,
+   "lon": 86.9524,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 1243414,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": []
+  },
+  {
+   "id": "prayagraj",
+   "name": "Prayagraj",
+   "state": "Uttar Pradesh",
+   "lat": 25.4358,
+   "lon": 81.8463,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 1212395,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": [
+    "Allahabad"
+   ]
+  },
+  {
+   "id": "dhanbad",
+   "name": "Dhanbad",
+   "state": "Jharkhand",
+   "lat": 23.7957,
+   "lon": 86.4304,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 1196214,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": []
+  },
+  {
+   "id": "chhatrapati-sambhajinagar",
+   "name": "Chhatrapati Sambhajinagar",
+   "state": "Maharashtra",
+   "lat": 19.8762,
+   "lon": 75.3433,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 1193167,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": [
+    "Aurangabad"
+   ]
+  },
+  {
+   "id": "amritsar",
+   "name": "Amritsar",
+   "state": "Punjab",
+   "lat": 31.634,
+   "lon": 74.8723,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 1183705,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": []
+  },
+  {
+   "id": "jodhpur",
+   "name": "Jodhpur",
+   "state": "Rajasthan",
+   "lat": 26.2389,
+   "lon": 73.0243,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 1138300,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": []
+  },
+  {
+   "id": "ranchi",
+   "name": "Ranchi",
+   "state": "Jharkhand",
+   "lat": 23.3441,
+   "lon": 85.3096,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 1126741,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": []
+  },
+  {
+   "id": "raipur",
+   "name": "Raipur",
+   "state": "Chhattisgarh",
+   "lat": 21.2514,
+   "lon": 81.6296,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 1123558,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": []
+  },
+  {
+   "id": "gwalior",
+   "name": "Gwalior",
+   "state": "Madhya Pradesh",
+   "lat": 26.2183,
+   "lon": 78.1828,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 1102884,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": []
+  },
+  {
+   "id": "chandigarh",
+   "name": "Chandigarh",
+   "state": "Chandigarh (UT)",
+   "lat": 30.7333,
+   "lon": 76.7794,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11.5,
+   "population": 1026459,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": []
+  },
+  {
+   "id": "tiruchirappalli",
+   "name": "Tiruchirappalli",
+   "state": "Tamil Nadu",
+   "lat": 10.7905,
+   "lon": 78.7047,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 1022518,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": [
+    "Trichy"
+   ]
+  },
+  {
+   "id": "kota",
+   "name": "Kota",
+   "state": "Rajasthan",
+   "lat": 25.2138,
+   "lon": 75.8648,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 1001694,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": []
+  },
+  {
+   "id": "mysuru",
+   "name": "Mysuru",
+   "state": "Karnataka",
+   "lat": 12.2958,
+   "lon": 76.6394,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11.5,
+   "population": 990900,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": [
+    "Mysore"
+   ]
+  },
+  {
+   "id": "guwahati",
+   "name": "Guwahati",
+   "state": "Assam",
+   "lat": 26.1445,
+   "lon": 91.7362,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11,
+   "population": 968549,
+   "population_source": "Census of India 2011, urban agglomeration (approximate — verify before operational use)",
+   "aliases": [
+    "Gauhati"
+   ]
+  },
+  {
+   "id": "thane",
+   "name": "Thane",
+   "state": "Maharashtra",
+   "lat": 19.2183,
+   "lon": 72.9781,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11.5,
+   "population": null,
+   "population_source": null,
+   "aliases": []
+  },
+  {
+   "id": "navi-mumbai",
+   "name": "Navi Mumbai",
+   "state": "Maharashtra",
+   "lat": 19.033,
+   "lon": 73.0297,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11.5,
+   "population": null,
+   "population_source": null,
+   "aliases": []
+  },
+  {
+   "id": "noida",
+   "name": "Noida",
+   "state": "Uttar Pradesh",
+   "lat": 28.5355,
+   "lon": 77.391,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11.5,
+   "population": null,
+   "population_source": null,
+   "aliases": [
+    "Gautam Buddh Nagar"
+   ]
+  },
+  {
+   "id": "gurugram",
+   "name": "Gurugram",
+   "state": "Haryana",
+   "lat": 28.4595,
+   "lon": 77.0266,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11.5,
+   "population": null,
+   "population_source": null,
+   "aliases": [
+    "Gurgaon"
+   ]
+  },
+  {
+   "id": "ghaziabad",
+   "name": "Ghaziabad",
+   "state": "Uttar Pradesh",
+   "lat": 28.6692,
+   "lon": 77.4538,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11.5,
+   "population": null,
+   "population_source": null,
+   "aliases": []
+  },
+  {
+   "id": "bhubaneswar",
+   "name": "Bhubaneswar",
+   "state": "Odisha",
+   "lat": 20.2961,
+   "lon": 85.8245,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11.5,
+   "population": null,
+   "population_source": null,
+   "aliases": []
+  },
+  {
+   "id": "cuttack",
+   "name": "Cuttack",
+   "state": "Odisha",
+   "lat": 20.4625,
+   "lon": 85.883,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11.5,
+   "population": null,
+   "population_source": null,
+   "aliases": []
+  },
+  {
+   "id": "dehradun",
+   "name": "Dehradun",
+   "state": "Uttarakhand",
+   "lat": 30.3165,
+   "lon": 78.0322,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11.5,
+   "population": null,
+   "population_source": null,
+   "aliases": []
+  },
+  {
+   "id": "haridwar",
+   "name": "Haridwar",
+   "state": "Uttarakhand",
+   "lat": 29.9457,
+   "lon": 78.1642,
+   "timezone": "Asia/Kolkata",
+   "zoom": 12,
+   "population": null,
+   "population_source": null,
+   "aliases": []
+  },
+  {
+   "id": "shimla",
+   "name": "Shimla",
+   "state": "Himachal Pradesh",
+   "lat": 31.1048,
+   "lon": 77.1734,
+   "timezone": "Asia/Kolkata",
+   "zoom": 12.5,
+   "population": null,
+   "population_source": null,
+   "aliases": []
+  },
+  {
+   "id": "jammu",
+   "name": "Jammu",
+   "state": "Jammu and Kashmir",
+   "lat": 32.7266,
+   "lon": 74.857,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11.5,
+   "population": null,
+   "population_source": null,
+   "aliases": []
+  },
+  {
+   "id": "leh",
+   "name": "Leh",
+   "state": "Ladakh (UT)",
+   "lat": 34.1526,
+   "lon": 77.5771,
+   "timezone": "Asia/Kolkata",
+   "zoom": 12.5,
+   "population": null,
+   "population_source": null,
+   "aliases": []
+  },
+  {
+   "id": "mangaluru",
+   "name": "Mangaluru",
+   "state": "Karnataka",
+   "lat": 12.9141,
+   "lon": 74.856,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11.5,
+   "population": null,
+   "population_source": null,
+   "aliases": [
+    "Mangalore"
+   ]
+  },
+  {
+   "id": "hubballi",
+   "name": "Hubballi",
+   "state": "Karnataka",
+   "lat": 15.3647,
+   "lon": 75.124,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11.5,
+   "population": null,
+   "population_source": null,
+   "aliases": [
+    "Hubli"
+   ]
+  },
+  {
+   "id": "belagavi",
+   "name": "Belagavi",
+   "state": "Karnataka",
+   "lat": 15.8497,
+   "lon": 74.4977,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11.5,
+   "population": null,
+   "population_source": null,
+   "aliases": [
+    "Belgaum"
+   ]
+  },
+  {
+   "id": "panaji",
+   "name": "Panaji",
+   "state": "Goa",
+   "lat": 15.4909,
+   "lon": 73.8278,
+   "timezone": "Asia/Kolkata",
+   "zoom": 12.5,
+   "population": null,
+   "population_source": null,
+   "aliases": [
+    "Panjim"
+   ]
+  },
+  {
+   "id": "gandhinagar",
+   "name": "Gandhinagar",
+   "state": "Gujarat",
+   "lat": 23.2156,
+   "lon": 72.6369,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11.5,
+   "population": null,
+   "population_source": null,
+   "aliases": []
+  },
+  {
+   "id": "udaipur",
+   "name": "Udaipur",
+   "state": "Rajasthan",
+   "lat": 24.5854,
+   "lon": 73.7125,
+   "timezone": "Asia/Kolkata",
+   "zoom": 12,
+   "population": null,
+   "population_source": null,
+   "aliases": []
+  },
+  {
+   "id": "ajmer",
+   "name": "Ajmer",
+   "state": "Rajasthan",
+   "lat": 26.4499,
+   "lon": 74.6399,
+   "timezone": "Asia/Kolkata",
+   "zoom": 12,
+   "population": null,
+   "population_source": null,
+   "aliases": []
+  },
+  {
+   "id": "bikaner",
+   "name": "Bikaner",
+   "state": "Rajasthan",
+   "lat": 28.0229,
+   "lon": 73.3119,
+   "timezone": "Asia/Kolkata",
+   "zoom": 12,
+   "population": null,
+   "population_source": null,
+   "aliases": []
+  },
+  {
+   "id": "solapur",
+   "name": "Solapur",
+   "state": "Maharashtra",
+   "lat": 17.6599,
+   "lon": 75.9064,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11.5,
+   "population": null,
+   "population_source": null,
+   "aliases": []
+  },
+  {
+   "id": "kolhapur",
+   "name": "Kolhapur",
+   "state": "Maharashtra",
+   "lat": 16.705,
+   "lon": 74.2433,
+   "timezone": "Asia/Kolkata",
+   "zoom": 12,
+   "population": null,
+   "population_source": null,
+   "aliases": []
+  },
+  {
+   "id": "salem",
+   "name": "Salem",
+   "state": "Tamil Nadu",
+   "lat": 11.6643,
+   "lon": 78.146,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11.5,
+   "population": null,
+   "population_source": null,
+   "aliases": []
+  },
+  {
+   "id": "puducherry",
+   "name": "Puducherry",
+   "state": "Puducherry (UT)",
+   "lat": 11.9416,
+   "lon": 79.8083,
+   "timezone": "Asia/Kolkata",
+   "zoom": 12,
+   "population": null,
+   "population_source": null,
+   "aliases": [
+    "Pondicherry"
+   ]
+  },
+  {
+   "id": "warangal",
+   "name": "Warangal",
+   "state": "Telangana",
+   "lat": 17.9689,
+   "lon": 79.5941,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11.5,
+   "population": null,
+   "population_source": null,
+   "aliases": []
+  },
+  {
+   "id": "guntur",
+   "name": "Guntur",
+   "state": "Andhra Pradesh",
+   "lat": 16.3067,
+   "lon": 80.4365,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11.5,
+   "population": null,
+   "population_source": null,
+   "aliases": []
+  },
+  {
+   "id": "nellore",
+   "name": "Nellore",
+   "state": "Andhra Pradesh",
+   "lat": 14.4426,
+   "lon": 79.9865,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11.5,
+   "population": null,
+   "population_source": null,
+   "aliases": []
+  },
+  {
+   "id": "tirupati",
+   "name": "Tirupati",
+   "state": "Andhra Pradesh",
+   "lat": 13.6288,
+   "lon": 79.4192,
+   "timezone": "Asia/Kolkata",
+   "zoom": 12,
+   "population": null,
+   "population_source": null,
+   "aliases": []
+  },
+  {
+   "id": "siliguri",
+   "name": "Siliguri",
+   "state": "West Bengal",
+   "lat": 26.7271,
+   "lon": 88.3953,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11.5,
+   "population": null,
+   "population_source": null,
+   "aliases": []
+  },
+  {
+   "id": "durgapur",
+   "name": "Durgapur",
+   "state": "West Bengal",
+   "lat": 23.5204,
+   "lon": 87.3119,
+   "timezone": "Asia/Kolkata",
+   "zoom": 11.5,
+   "population": null,
+   "population_source": null,
+   "aliases": []
+  },
+  {
+   "id": "shillong",
+   "name": "Shillong",
+   "state": "Meghalaya",
+   "lat": 25.5788,
+   "lon": 91.8933,
+   "timezone": "Asia/Kolkata",
+   "zoom": 12,
+   "population": null,
+   "population_source": null,
+   "aliases": []
+  },
+  {
+   "id": "imphal",
+   "name": "Imphal",
+   "state": "Manipur",
+   "lat": 24.817,
+   "lon": 93.9368,
+   "timezone": "Asia/Kolkata",
+   "zoom": 12,
+   "population": null,
+   "population_source": null,
+   "aliases": []
+  },
+  {
+   "id": "agartala",
+   "name": "Agartala",
+   "state": "Tripura",
+   "lat": 23.8315,
+   "lon": 91.2868,
+   "timezone": "Asia/Kolkata",
+   "zoom": 12,
+   "population": null,
+   "population_source": null,
+   "aliases": []
+  },
+  {
+   "id": "aizawl",
+   "name": "Aizawl",
+   "state": "Mizoram",
+   "lat": 23.7271,
+   "lon": 92.7176,
+   "timezone": "Asia/Kolkata",
+   "zoom": 12,
+   "population": null,
+   "population_source": null,
+   "aliases": []
+  },
+  {
+   "id": "kohima",
+   "name": "Kohima",
+   "state": "Nagaland",
+   "lat": 25.6751,
+   "lon": 94.1086,
+   "timezone": "Asia/Kolkata",
+   "zoom": 12.5,
+   "population": null,
+   "population_source": null,
+   "aliases": []
+  },
+  {
+   "id": "itanagar",
+   "name": "Itanagar",
+   "state": "Arunachal Pradesh",
+   "lat": 27.0844,
+   "lon": 93.6053,
+   "timezone": "Asia/Kolkata",
+   "zoom": 12.5,
+   "population": null,
+   "population_source": null,
+   "aliases": []
+  },
+  {
+   "id": "gangtok",
+   "name": "Gangtok",
+   "state": "Sikkim",
+   "lat": 27.3389,
+   "lon": 88.6065,
+   "timezone": "Asia/Kolkata",
+   "zoom": 12.5,
+   "population": null,
+   "population_source": null,
+   "aliases": []
+  },
+  {
+   "id": "sri-vijaya-puram",
+   "name": "Sri Vijaya Puram",
+   "state": "Andaman and Nicobar Islands (UT)",
+   "lat": 11.6234,
+   "lon": 92.7265,
+   "timezone": "Asia/Kolkata",
+   "zoom": 12.5,
+   "population": null,
+   "population_source": null,
+   "aliases": [
+    "Port Blair"
+   ]
+  }
+ ]
+}

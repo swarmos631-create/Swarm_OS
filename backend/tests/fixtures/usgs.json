@@ -1,0 +1,50 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "id": "us7000inside",
+   "geometry": {
+    "coordinates": [
+     77.1,
+     28.7,
+     10
+    ]
+   },
+   "properties": {
+    "mag": 4.6,
+    "time": 1761300000000,
+    "place": "near Delhi, India",
+    "url": "https://earthquake.usgs.gov/x"
+   }
+  },
+  {
+   "id": "us7000outside",
+   "geometry": {
+    "coordinates": [
+     -120.0,
+     36.0,
+     8
+    ]
+   },
+   "properties": {
+    "mag": 5.0,
+    "time": 1761300000000,
+    "place": "California"
+   }
+  },
+  {
+   "id": "nomag",
+   "geometry": {
+    "coordinates": [
+     80.0,
+     20.0,
+     8
+    ]
+   },
+   "properties": {
+    "mag": null,
+    "time": 1761300000000
+   }
+  }
+ ]
+}

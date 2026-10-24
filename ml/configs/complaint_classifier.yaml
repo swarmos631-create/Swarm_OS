@@ -1,0 +1,13 @@
+model_name: complaint_classifier
+description: Classifies citizen complaint text into 12 civic service categories.
+task_type: text_classification
+algorithm: tfidf_word_char_ngrams + keyword_lexicon + logistic_regression
+used_by: [complaint_classification_agent]
+dataset:
+  name: complaints_v1
+  generator: complaints
+  schema: complaints
+  params: {rows: 2400, seed: 7, version: 4}
+split: {method: template_holdout, val: 0.1, seed: 42}
+hyperparams: {C: 4.0, ngram_max: 2, min_df: 1}
+gate: {metric: macro_f1, margin: 0.02, min_value: 0.7}

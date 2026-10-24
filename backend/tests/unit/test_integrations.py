@@ -1,0 +1,112 @@
+import json
+from datetime import UTC, datetime
+from pathlib import Path
+
+import httpx
+import pytest
+
+from swarmos.config import get_settings
+from swarmos.integrations.adapters import (
+    OgdCpcbAqi,
+    normalize_cpcb,
+    normalize_open_meteo_aq,
+    normalize_open_meteo_weather,
+    normalize_overpass,
+    normalize_usgs,
+)
+from swarmos.integrations.base import IntegrationError
+from swarmos.integrations.http import request_json
+from swarmos.integrations.sync import freshness
+from swarmos.models import DataSource
+
+FIX = Path(__file__).resolve().parents[1] / "fixtures"
+NOW = datetime(2026, 10, 24, 12, 0, tzinfo=UTC)
+
+
+def load(name):
+    return json.loads((FIX / name).read_text())
+
+
+def test_open_meteo_weather_normalisation_separates_forecast_from_analysis():
+    p = normalize_open_meteo_weather(load("open_meteo_weather.json"), NOW)
+    temps = [m for m in p.measurements if m.metric == "temperature_2m"]
+    assert {m.kind for m in temps} == {"model_analysis", "forecast"}
+    assert all(m.observed_at.tzinfo is not None for m in p.measurements)
+    # null upstream values are skipped, never filled
+    assert not any(m.metric == "wind_gusts_10m" and m.observed_at == datetime(2026, 10, 24, 11, tzinfo=UTC) for m in p.measurements)
+    daylight = [m for m in p.measurements if m.metric == "daily_daylight_hours"]
+    assert daylight and "sunrise_utc" in daylight[0].meta
+
+
+def test_open_meteo_aq_normalisation():
+    p = normalize_open_meteo_aq(load("open_meteo_aq.json"), NOW)
+    assert {m.metric for m in p.measurements} >= {"pm2_5", "pm10"}
+    assert all(m.unit == "µg/m³" for m in p.measurements)
+
+
+def test_open_meteo_missing_keys_is_schema_error():
+    with pytest.raises(IntegrationError) as e:
+        normalize_open_meteo_weather({"latitude": 1}, NOW)
+    assert e.value.kind == "schema"
+
+
+def test_usgs_filters_to_indian_region():
+    p = normalize_usgs(load("usgs.json"))
+    assert [f.external_id for f in p.features] == ["us7000inside"]
+    assert p.features[0].properties["magnitude"] == 4.6
+
+
+def test_overpass_normalisation_layers_and_counts():
+    p = normalize_overpass(load("overpass.json"), load("overpass_counts.json"), NOW)
+    layers = sorted(f.layer for f in p.features)
+    assert layers == ["fire_station", "hospital", "school"]
+    hospital = next(f for f in p.features if f.layer == "hospital")
+    assert hospital.properties["wheelchair"] == "yes" and hospital.lat == 12.95
+    assert {m.metric: m.value for m in p.measurements}["osm_landuse_residential_ways"] == 1200
+
+
+def test_cpcb_normalisation_accepts_both_schemas_and_converts_ist():
+    p = normalize_cpcb(load("cpcb.json")["records"])
+    assert len(p.measurements) == 2
+    pm = next(m for m in p.measurements if m.metric == "pm2_5")
+    assert pm.observed_at == datetime(2026, 10, 24, 6, 30, tzinfo=UTC)
+    assert pm.entity.startswith("Silk Board")
+
+
+def test_cpcb_requires_key():
+    ok, reason = OgdCpcbAqi().configured(get_settings())
+    assert not ok and "SWARMOS_OGD_API_KEY" in reason
+
+
+async def test_http_retries_then_succeeds_and_classifies_errors():
+    calls = {"n": 0}
+
+    def handler(request):
+        calls["n"] += 1
+        if calls["n"] < 2:
+            return httpx.Response(503)
+        return httpx.Response(200, json={"ok": True})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
+        assert await request_json(c, "GET", "https://example.test/x", backoff_s=0) == {"ok": True}
+    assert calls["n"] == 2
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(401))) as c:
+        with pytest.raises(IntegrationError) as e:
+            await request_json(c, "GET", "https://example.test/x", backoff_s=0)
+        assert e.value.kind == "auth"
+
+    def timeout(request):
+        raise httpx.ReadTimeout("slow")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(timeout)) as c:
+        with pytest.raises(IntegrationError) as e:
+            await request_json(c, "GET", "https://example.test/x", retries=1, backoff_s=0)
+        assert e.value.kind == "timeout"
+
+
+def test_freshness_states():
+    src = DataSource(id="x", freshness_threshold_s=3600)
+    assert freshness(src, None, NOW)["state"] == "never"
+    assert freshness(src, datetime(2026, 10, 24, 11, 30, tzinfo=UTC), NOW)["state"] == "fresh"
+    assert freshness(src, datetime(2026, 10, 24, 9, 0, tzinfo=UTC), NOW)["state"] == "stale"
