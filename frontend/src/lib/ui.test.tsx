@@ -63,4 +63,28 @@ describe("api client", () => {
     expect(err).toBeInstanceOf(ApiError);
     expect(err.code).toBe("network_error");
   });
+
+  it("rejects a successful response that is not JSON (e.g. a misrouted HTML page)", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("<!doctype html><html></html>", { status: 200 }));
+    await expect(api("/auth/me")).rejects.toMatchObject({ code: "bad_response", status: 200 });
+  });
+
+  it("explains non-JSON server failures with the HTTP status", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("A server error has occurred", { status: 500 }));
+    await expect(api("/auth/me")).rejects.toMatchObject({ code: "http_error", message: "The SwarmOS API failed (HTTP 500)" });
+  });
+
+  it("times out a request that never answers instead of waiting forever", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.spyOn(globalThis, "fetch").mockImplementation((_url, init) => new Promise((_resolve, reject) => {
+        init!.signal!.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+      }));
+      const pending = api("/auth/me").catch((e: unknown) => e);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(await pending).toMatchObject({ status: 0, code: "timeout" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

@@ -31,7 +31,6 @@ from swarmos.integrations.adapters import ADAPTERS
 from swarmos.integrations.sync import city_source_status
 from swarmos.jobs.dispatch import dispatch
 from swarmos.jobs.queue import enqueue
-from swarmos.ml import pipeline
 from swarmos.models import (
     AgentExecution,
     AgentTask,
@@ -112,6 +111,8 @@ def mv_dict(m: ModelVersion) -> dict[str, Any]:
 
 @router.get("/models", tags=["models"])
 def list_models(principal: Principal = Depends(current_principal), db: Session = Depends(get_db)) -> dict[str, Any]:
+    from swarmos.ml import pipeline  # heavy (scikit-learn): imported on use to keep cold starts fast
+
     settings = get_settings()
     out = []
     for cfg in pipeline.available_configs(settings):
@@ -134,6 +135,8 @@ class TrainIn(BaseModel):
 
 @router.post("/models/{model_name}/train", status_code=202, tags=["models"])
 def train(model_name: str, body: TrainIn, background_tasks: BackgroundTasks, principal: Principal = Depends(require_role("admin")), db: Session = Depends(get_db)) -> dict[str, Any]:
+    from swarmos.ml import pipeline
+
     if model_name not in {c["model_name"] for c in pipeline.available_configs(get_settings())}:
         raise not_found("Model config")
     active = db.scalars(select(Job).where(Job.kind == "train_model", Job.status.in_(("queued", "running")))).all()
@@ -152,6 +155,8 @@ class PromoteIn(BaseModel):
 
 @router.post("/models/{model_name}/versions/{version}/promote", tags=["models"])
 def promote(model_name: str, version: str, body: PromoteIn, principal: Principal = Depends(require_role("admin"))) -> dict[str, Any]:
+    from swarmos.ml import pipeline
+
     try:
         pipeline.promote(model_name, version, actor_id=principal.id, force=body.force)
     except pipeline.PromotionError as exc:
@@ -161,6 +166,8 @@ def promote(model_name: str, version: str, body: PromoteIn, principal: Principal
 
 @router.post("/models/{model_name}/rollback", tags=["models"])
 def rollback(model_name: str, principal: Principal = Depends(require_role("admin"))) -> dict[str, Any]:
+    from swarmos.ml import pipeline
+
     try:
         target = pipeline.rollback(model_name, actor_id=principal.id)
     except pipeline.PromotionError as exc:

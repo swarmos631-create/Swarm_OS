@@ -2,7 +2,7 @@ import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 
 import { AppShell } from "./components/layout/AppShell";
-import { EmptyState, LoadingBlock } from "./components/ui";
+import { EmptyState, ErrorState, LoadingBlock } from "./components/ui";
 import { CommandCenter } from "./pages/CommandCenter";
 import { LoginPage } from "./pages/Login";
 import { CityProvider, rememberedCity, useCities } from "./state/city";
@@ -32,14 +32,27 @@ function CityGate() {
   const cities = useCities();
   return (
     <CityProvider>
-      {cities.isSuccess ? <AppShell /> : <div className="content"><LoadingBlock rows={5} /></div>}
+      {cities.isSuccess ? <AppShell /> : cities.error
+        ? <div className="content"><ErrorState error={cities.error} onRetry={() => void cities.refetch()} /></div>
+        : <div className="content"><LoadingBlock rows={5} /></div>}
     </CityProvider>
   );
 }
 
+function ApiUnavailable({ error, onRetry }: { error: Error; onRetry: () => void }) {
+  return (
+    <div className="content stack">
+      <h1>SwarmOS cannot reach its API</h1>
+      <ErrorState error={error} onRetry={onRetry} />
+      <p className="small muted">Operators: check <a href="/api/health/ready">/api/health/ready</a> and the server logs.</p>
+    </div>
+  );
+}
+
 export function App() {
-  const { me, loading } = useSession();
+  const { me, loading, error, retry } = useSession();
   if (loading) return <div className="content"><LoadingBlock rows={4} /></div>;
+  if (error) return <ApiUnavailable error={error} onRetry={retry} />;
   if (!me) return <Routes><Route path="*" element={<LoginPage />} /></Routes>;
   const page = (el: React.ReactNode) => <Suspense fallback={<LoadingBlock rows={6} />}>{el}</Suspense>;
   return (

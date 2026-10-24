@@ -85,3 +85,32 @@ def test_promoted_model_loads_from_database_without_files():
     assert get_runtime().load("water_demand_forecaster").version == r["version"]
     v = next(v for v in pipeline.list_versions("water_demand_forecaster") if v.version == r["version"])
     pipeline.promote("water_demand_forecaster", v.version)  # checksum verified against the database copy
+
+
+def test_database_faults_return_actionable_503(tmp_path):
+    from fastapi.testclient import TestClient
+
+    from swarmos.db import reset_engine
+    from swarmos.main import create_app
+
+    reset_engine(f"sqlite:///{tmp_path / 'empty.db'}")  # reachable but never migrated
+    try:
+        with TestClient(create_app()) as c:
+            r = c.get("/api/v1/auth/me", cookies={"swarmos_session": "x"})
+            assert r.status_code == 503 and r.json()["error"]["code"] == "database_not_migrated"
+            assert c.get("/api/health/ready").json()["checks"]["migrations"] == "missing"
+    finally:
+        reset_engine()
+
+
+def test_invalid_configuration_is_served_as_503_instead_of_crashing():
+    from fastapi.testclient import TestClient
+
+    from swarmos.main import _misconfigured_app
+
+    c = TestClient(_misconfigured_app(["SQLite cannot be used on Vercel."]))
+    for method in ("get", "post"):
+        r = getattr(c, method)("/api/v1/auth/me")
+        assert r.status_code == 503
+        assert r.json()["error"] == {"code": "misconfigured", "message": "SQLite cannot be used on Vercel.",
+                                     "details": None, "correlation_id": None}

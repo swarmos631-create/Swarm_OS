@@ -53,8 +53,10 @@ def make_engine(url: str) -> Engine:
         event.listen(engine, "connect", _sqlite_pragmas)
     else:
         # Small pool with recycling: serverless instances are many and short-lived, and managed Postgres
-        # (e.g. Neon) closes idle connections.
-        engine = create_engine(url, pool_pre_ping=True, pool_size=5, max_overflow=5, pool_recycle=300, future=True)
+        # (e.g. Neon) closes idle connections. A connect timeout makes an unreachable database fail fast
+        # instead of holding a request (and the UI) until the function's max duration.
+        engine = create_engine(url, pool_pre_ping=True, pool_size=5, max_overflow=5, pool_recycle=300,
+                               connect_args={"connect_timeout": 10}, future=True)
     return engine
 
 
