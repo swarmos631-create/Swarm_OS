@@ -4,6 +4,8 @@
 
 * **Single node (default):** `swarmos serve` runs the API, the embedded worker and the PWA (from `frontend/dist`) on one port. Put HTTPS in front of it.
 * **Scaled:** N API replicas with `SWARMOS_WORKER_EMBEDDED=false`, plus one or more `swarmos worker` processes, all on PostgreSQL. The job queue's compare-and-set claim and leases make several workers safe.
+* **Render API + Vercel frontend (current):** the API as a Render web service, the PWA on Vercel proxying `/api/*`
+  to it. See [Render API + Vercel frontend](#render-api--vercel-frontend).
 * **Vercel (serverless):** the PWA as a static `frontend` service and the API as a Python function `backend` service, on a managed PostgreSQL. No long-running worker: jobs run inline after the request, and a cron drains the queue. See [Vercel](#vercel).
 
 ## Production steps
@@ -28,7 +30,46 @@ Health checks: liveness `GET /api/health/live`; readiness `GET /api/health/ready
 Docker is not required. A container image only needs Python 3.11+, the backend package and `frontend/dist`. This
 repository does not ship a Dockerfile, because the target machine had no Docker to verify one.
 
-## Vercel
+## Render API + Vercel frontend
+
+This is how https://swarmos-ebon.vercel.app runs.
+
+| Part | Where | Config |
+|---|---|---|
+| API (FastAPI + embedded worker, full `ml` extra) | Render web service `swarmos-api`, Singapore | `render.yaml` |
+| PWA | Vercel project `swarm_os` (static build of `frontend/`) | `vercel.json` |
+| Database | Neon Postgres, AWS ap-southeast-1 (Singapore) | `SWARMOS_DATABASE_URL` on Render |
+
+`vercel.json` rewrites `/api/*` to `https://swarmos-api.onrender.com/api/*`, so the browser only talks to its own
+origin: no CORS settings, and the session/CSRF cookies and the Content-Security-Policy work as before. If the
+Render service gets another URL, change that rewrite.
+
+Steps:
+
+1. Render → **New → Blueprint**, pick this repository. Render reads `render.yaml` and asks for
+   `SWARMOS_DATABASE_URL`: paste the Neon connection string (Neon console → Connect; the `postgresql://…` URL with
+   `sslmode=require`).
+2. Render builds with `pip install -e ".[ml]"` and starts with `swarmos migrate && swarmos serve`, so migrations
+   run on every deploy. Seed once if the database is new: run the bootstrap endpoint (below) or
+   `swarmos seed --no-demo` against the database.
+3. Vercel deploys the frontend on every push; nothing to configure there besides `vercel.json`.
+4. Check `https://swarmos-ebon.vercel.app/api/health/ready` (proxied to Render).
+
+Notes:
+
+* **Sign-in:** `SWARMOS_AUTH_DISABLED=true` (set in `render.yaml`) removes the sign-in screen: every visitor acts
+  as one built-in admin account (`guest@swarmos.local`), so anyone with the URL can do everything. Set it to
+  `false` on Render to require accounts again; existing accounts keep working either way.
+* **Free plan:** the instance sleeps after 15 idle minutes and the first request then takes about a minute.
+  Switch the service to the Starter plan in Render to keep it awake (and the embedded worker running).
+* **Jobs:** the embedded worker runs syncs, agent tasks and training in the same process. No Vercel cron is used.
+* **Bootstrap endpoint:** `POST /api/internal/bootstrap` (below) works on Render too if you set `CRON_SECRET` there.
+
+## Vercel (API and frontend together, previous setup)
+
+This section describes running the API as a Vercel function. The current `vercel.json` no longer does that; to go
+back, restore the `services` configuration from git history (commit `afdb1da`).
+
 
 `vercel.json` defines two [Vercel Services](https://vercel.com/docs/services) in one project:
 
