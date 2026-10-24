@@ -34,27 +34,43 @@ export async function api<T>(path: string, opts: { method?: string; body?: unkno
     const t = csrfToken();
     if (t) headers["X-CSRF-Token"] = t;
   }
+  // A hung request (e.g. the API waiting on an unreachable database) must surface as an error, not an endless spinner.
+  const ctrl = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; ctrl.abort(); }, REQUEST_TIMEOUT_MS);
+  const onAbort = () => ctrl.abort();
+  opts.signal?.addEventListener("abort", onAbort, { once: true });
   let res: Response;
+  let text: string;
   try {
-    res = await fetch(url, { method, headers, credentials: "same-origin", body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined, signal: opts.signal });
+    res = await fetch(url, { method, headers, credentials: "same-origin", body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined, signal: ctrl.signal });
+    text = await res.text();
   } catch (e) {
+    if (timedOut) throw new ApiError(0, "timeout", "The SwarmOS API did not respond in time. Try again shortly.");
     if ((e as Error).name === "AbortError") throw e;
     throw new ApiError(0, "network_error", navigator.onLine ? "Cannot reach the SwarmOS API" : "You are offline");
+  } finally {
+    clearTimeout(timer);
+    opts.signal?.removeEventListener("abort", onAbort);
   }
-  const text = await res.text();
   const data = text ? safeJson(text) : null;
   if (!res.ok) {
     const err = (data as any)?.error;
-    throw new ApiError(res.status, err?.code ?? "http_error", err?.message ?? `Request failed (${res.status})`, err?.details, err?.correlation_id);
+    throw new ApiError(res.status, err?.code ?? "http_error", err?.message ?? `The SwarmOS API failed (HTTP ${res.status})`, err?.details, err?.correlation_id);
   }
+  // A 2xx that is not JSON (e.g. an HTML page from a misrouted request) must not be mistaken for data.
+  if (data === BAD_RESPONSE) throw new ApiError(res.status, "bad_response", "The server returned an unexpected response (not the SwarmOS API)");
   return data as T;
 }
+
+const REQUEST_TIMEOUT_MS = 30_000;
+const BAD_RESPONSE = Symbol("bad_response");
 
 function safeJson(text: string): unknown {
   try {
     return JSON.parse(text);
   } catch {
-    return { error: { code: "bad_response", message: "The server returned an unexpected response" } };
+    return BAD_RESPONSE;
   }
 }
 

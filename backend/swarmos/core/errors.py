@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import DBAPIError, OperationalError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from swarmos.core.logging import correlation_id_var
@@ -51,6 +52,11 @@ def _body(code: str, message: str, details: Any = None) -> dict[str, Any]:
     }
 
 
+def _is_missing_table(exc: DBAPIError) -> bool:
+    """PostgreSQL reports SQLSTATE 42P01 (undefined_table); SQLite says "no such table"."""
+    return getattr(exc.orig, "sqlstate", None) == "42P01" or "no such table" in str(exc.orig)
+
+
 def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(ApiError)
     async def _api_error(_: Request, exc: ApiError) -> JSONResponse:
@@ -69,6 +75,21 @@ def install_error_handlers(app: FastAPI) -> None:
             {"loc": list(e.get("loc", [])), "msg": e.get("msg"), "type": e.get("type")} for e in exc.errors()
         ]
         return JSONResponse(_body("validation_error", "Request validation failed", details), status_code=422)
+
+    @app.exception_handler(DBAPIError)
+    async def _database(_: Request, exc: DBAPIError) -> JSONResponse:
+        # Infrastructure faults get a specific, actionable 503 instead of a generic 500 (no internals leaked).
+        if _is_missing_table(exc):
+            log.error("database_not_migrated", extra={"error_type": type(exc.orig).__name__})
+            return JSONResponse(_body("database_not_migrated",
+                                      "The database schema is missing. Run `swarmos migrate` against this database."),
+                                status_code=503)
+        if isinstance(exc, OperationalError):
+            log.error("database_unavailable", extra={"error_type": type(exc.orig).__name__})
+            return JSONResponse(_body("database_unavailable", "The database is unreachable. Try again shortly."),
+                                status_code=503)
+        log.exception("unhandled_error", extra={"error_type": type(exc).__name__})
+        return JSONResponse(_body("internal_error", "An unexpected error occurred"), status_code=500)
 
     @app.exception_handler(Exception)
     async def _unhandled(_: Request, exc: Exception) -> JSONResponse:

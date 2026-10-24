@@ -10,13 +10,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from pydantic import ValidationError
 from sqlalchemy import inspect, text
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from swarmos import __version__
 from swarmos.agents.registry import AGENTS
 from swarmos.api import agents, auth, cities, incidents, internal, platform
-from swarmos.config import REPO_ROOT, get_settings
+from swarmos.config import ON_VERCEL, REPO_ROOT, get_settings
 from swarmos.core.errors import install_error_handlers
 from swarmos.core.logging import configure_logging, correlation_id_var
 from swarmos.db import get_engine
@@ -28,9 +29,13 @@ log = logging.getLogger("swarmos.app")
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     configure_logging(settings.log_level)
-    tables = set(inspect(get_engine()).get_table_names())
-    if "alembic_version" not in tables:
-        log.error("database_not_migrated", extra={"hint": "Run: swarmos init  (or: alembic upgrade head)"})
+    try:
+        tables = set(inspect(get_engine()).get_table_names())
+        if "alembic_version" not in tables:
+            log.error("database_not_migrated", extra={"hint": "Run: swarmos init  (or: alembic upgrade head)"})
+    except Exception as exc:
+        # Keep serving: /api/health/ready and the API's 503 responses then explain the problem to operators.
+        log.error("database_unreachable_at_startup", extra={"error_type": type(exc).__name__})
     worker = None
     if settings.worker_embedded and settings.job_mode == "worker" and settings.env != "test":
         from swarmos.jobs.worker import EmbeddedWorker
@@ -139,4 +144,28 @@ def _mount_frontend(app: FastAPI) -> None:
         return FileResponse(dist / "index.html", headers={"Cache-Control": "no-cache"})
 
 
-app = create_app()
+def _misconfigured_app(errors: list[str]) -> FastAPI:
+    """Serverless fallback when settings are invalid: every API call answers 503 with the reason.
+
+    Without it the function crashes on import and the browser only sees an opaque platform error.
+    Only validator messages are exposed (never input values), and they contain no secrets.
+    """
+    fallback = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+
+    @fallback.api_route("/{path:path}", methods=["GET", "POST", "PATCH", "DELETE"], include_in_schema=False)
+    def misconfigured(path: str) -> JSONResponse:
+        return JSONResponse({"error": {"code": "misconfigured", "message": " ".join(errors), "details": None,
+                                       "correlation_id": None}}, status_code=503,
+                            headers={"Cache-Control": "no-store"})
+
+    return fallback
+
+
+try:
+    app = create_app()
+except ValidationError as exc:
+    if not ON_VERCEL:
+        raise
+    messages = [str(e["msg"]).removeprefix("Value error, ") for e in exc.errors()]
+    logging.getLogger("swarmos.app").error("invalid_configuration", extra={"errors": messages})
+    app = _misconfigured_app(messages)

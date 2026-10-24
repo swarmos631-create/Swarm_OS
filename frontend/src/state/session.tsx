@@ -7,6 +7,8 @@ import type { Me, Role } from "../api/types";
 interface SessionValue {
   me: Me | null;
   loading: boolean;
+  error: Error | null;
+  retry: () => void;
   login: (email: string, password: string) => Promise<Me>;
   logout: () => Promise<void>;
   can: (role: Role) => boolean;
@@ -56,13 +58,20 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, [qc]);
 
+  // A 401 just means "signed out"; anything else means the API itself is failing and must be shown, not hidden.
+  const error = meQ.error && !(meQ.error instanceof ApiError && meQ.error.status === 401) && !me ? meQ.error : null;
+  const { refetch } = meQ;
+  const retry = useCallback(() => { void refetch(); }, [refetch]);
+
   const value = useMemo<SessionValue>(() => ({
     me,
     loading: meQ.isLoading,
+    error,
+    retry,
     login,
     logout,
     can: (role) => !!me && RANK[me.role] >= RANK[role],
-  }), [me, meQ.isLoading, login, logout]);
+  }), [me, meQ.isLoading, error, retry, login, logout]);
 
   return <SessionCtx.Provider value={value}>{children}</SessionCtx.Provider>;
 }
