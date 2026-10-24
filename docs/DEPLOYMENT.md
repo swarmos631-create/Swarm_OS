@@ -81,6 +81,12 @@ Serverless mode switches on automatically when `VERCEL=1` (set by the platform):
 
 ### Limits to check for your plan
 
+* **Region (latency):** the API and the database must be in the same region. A dashboard request makes about 50
+  database queries, so each cross-continent round trip (~200 ms) turns into seconds of lag. `vercel.json` pins
+  functions to Singapore (`"regions": ["sin1"]`, the closest region to Indian users); create the Neon database in
+  **AWS Asia Pacific (Singapore)**. If your database lives elsewhere, change `regions` to match it. Verify with
+  `GET /api/health/ready`: `db_latency_ms` should be a few milliseconds, and `region` shows where the function ran.
+
 * **Cron frequency:** `vercel.json` schedules the cron once a day (`"0 6 * * *"`), which the Hobby plan allows.
   On Pro you can run it more often, for example every 30 minutes (`"*/30 * * * *"`). Between runs, data refreshes on *Sync now*.
 * **Function duration:** 300 s needs Fluid compute (the default for new projects). Lower `maxDuration` and
