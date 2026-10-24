@@ -12,6 +12,7 @@ export interface Me {
   csrf_token: string | null;
   environment: string;
   demo_mode: boolean;
+  auth_disabled?: boolean;
 }
 
 export interface City {
