@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 
 import { api } from "../../api/client";
+import { dashboardQuery } from "../../api/queries";
 import { ago } from "../../lib/format";
 import { Icon, type IconName } from "../../lib/icons";
 import { useCity } from "../../state/city";
@@ -33,9 +34,9 @@ function Notifications({ cityId }: { cityId: string }) {
   const n = q.data?.items.length ?? 0;
   return (
     <div style={{ position: "relative" }}>
-      <button className="btn ghost icon" aria-label={`Notifications (${n})`} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <button className="round-btn" aria-label={`Notifications (${n})`} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         <Icon name="bell" />
-        {n > 0 && <span className="badge b-info" style={{ position: "absolute", top: -2, right: -6, height: 16, padding: "0 5px" }}>{Math.min(n, 9)}</span>}
+        {n > 0 && <span className="count-dot">+{Math.min(n, 9)}</span>}
       </button>
       {open && (
         <div className="panel popover" style={{ position: "absolute", right: 0, top: 42, width: "min(340px, calc(100vw - 24px))", zIndex: 30, maxHeight: 420, overflowY: "auto" }}>
@@ -54,6 +55,26 @@ function Notifications({ cityId }: { cityId: string }) {
   );
 }
 
+/** Live summary pills across the top bar ("Active: 6/10" style). */
+function StatPills({ cityId }: { cityId: string }) {
+  const q = useQuery({ ...dashboardQuery(cityId), refetchInterval: 60_000 });
+  const d = q.data;
+  if (!d) return <div className="stat-pills hide-sm" aria-hidden="true"><span className="pill skeleton" style={{ width: 360 }} /></div>;
+  const sources = d.source_health.filter((s) => s.applies_to_city);
+  const ok = sources.filter((s) => ["connected", "internal", "demo"].includes(s.status)).length;
+  const aqi = d.indicators.find((i) => i.id === "aqi");
+  const runs = Object.values(d.agents.executions_24h).reduce((a, b) => a + b, 0);
+  return (
+    <div className="stat-pills hide-sm" aria-label="City summary">
+      <span className="pill"><Icon name="incidents" />Incidents: <b>{d.incidents.open}</b></span>
+      <span className="pill"><Icon name="alert" />Critical: <b>{d.incidents.by_severity.critical}</b></span>
+      <span className="pill"><Icon name="integrations" />Sources: <b>{ok}/{sources.length}</b></span>
+      <span className="pill"><Icon name="agents" />Agent runs 24h: <b>{runs}</b></span>
+      {aqi?.status === "available" && <span className="pill"><Icon name="analytics" />AQI: <b>{String(aqi.value)}</b></span>}
+    </div>
+  );
+}
+
 export function AppShell() {
   const { cityId } = useCity();
   const { me, logout } = useSession();
@@ -61,42 +82,45 @@ export function AppShell() {
   const [menu, setMenu] = useState(false);
   const loc = useLocation();
   useEffect(() => setMenu(false), [loc.pathname]);
+  const initials = (me?.display_name ?? "?").split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
 
   return (
     <div className="shell">
       <a href="#main" className="sr-only">Skip to content</a>
       <aside className={`sidebar ${menu ? "open" : ""}`} aria-label="Primary navigation">
-        <div className="brand">
+        <div className="brand" title="SwarmOS — City operations">
           <img src="/icons/favicon.svg" alt="" />
-          <div><b>SwarmOS</b><small>City operations</small></div>
+          <div className="brand-text"><b>SwarmOS</b><small>City operations</small></div>
         </div>
-        <nav className="stack" style={{ gap: 2 }}>
+        <nav className="rail-nav">
           {NAV.map((n) => (
             <Section key={n.label} title={n.section}>
-              <NavLink end={n.to === ""} to={`/c/${cityId}${n.to ? `/${n.to}` : ""}`} className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
-                <Icon name={n.icon} />{n.label}
+              <NavLink end={n.to === ""} to={`/c/${cityId}${n.to ? `/${n.to}` : ""}`} className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`} title={n.label}>
+                <span className="nav-ico"><Icon name={n.icon} /></span><span className="nav-label">{n.label}</span>
               </NavLink>
             </Section>
           ))}
         </nav>
-        <div className="sidebar-foot stack">
-          <div className="row"><b className="small">{me?.display_name}</b><span className="badge b-records">{me?.role}</span></div>
-          <span className="xs faint" style={{ overflowWrap: "anywhere" }}>{me?.email}</span>
-          {me?.environment !== "production" && <span className="xs" style={{ color: "var(--amber)" }}>Development environment{me?.demo_mode ? " · demo mode" : ""}</span>}
-          {!me?.auth_disabled && <button className="btn sm" onClick={() => void logout()}><Icon name="logout" />Sign out</button>}
+        <div className="sidebar-foot">
+          <NavLink to={`/c/${cityId}/system`} className="nav-link" title="System status"><span className="nav-ico"><Icon name="settings" /></span><span className="nav-label">Settings</span></NavLink>
+          <a className="nav-link" href="/api/health/ready" target="_blank" rel="noreferrer" title="API health"><span className="nav-ico"><Icon name="help" /></span><span className="nav-label">API health</span></a>
+          {!me?.auth_disabled && <button className="nav-link" onClick={() => void logout()} title="Sign out"><span className="nav-ico"><Icon name="logout" /></span><span className="nav-label">Sign out</span></button>}
         </div>
       </aside>
       {menu && <div className="overlay" style={{ zIndex: 39 }} onClick={() => setMenu(false)} />}
       <div className="main">
         <header className="topbar">
-          <button className="btn ghost icon mobile-only" aria-label="Open navigation" onClick={() => setMenu(true)}><Icon name="menu" /></button>
-          <CitySelector />
+          <button className="round-btn mobile-only" aria-label="Open navigation" onClick={() => setMenu(true)}><Icon name="menu" /></button>
+          <StatPills cityId={cityId} />
           <div className="spacer" />
-          <span className="row small hide-sm" aria-live="polite">
-            <span className={`pulse ${online ? "" : "off"}`} />{online ? "Online" : "Offline"}
-          </span>
+          <CitySelector />
+          <span className={`pill hide-sm ${online ? "" : "warn"}`} aria-live="polite"><span className={`pulse ${online ? "" : "off"}`} />{online ? "Online" : "Offline"}</span>
           <PwaControls />
           <Notifications cityId={cityId} />
+          <div className="user-chip hide-sm" title={me?.email}>
+            <span className="avatar">{initials}</span>
+            <span className="stack" style={{ gap: 0 }}><b>{me?.display_name}</b><span className="xs faint">{me?.role === "admin" ? "Administrator" : me?.role}{me?.environment !== "production" ? " · dev" : ""}</span></span>
+          </div>
         </header>
         {!online && (
           <div className="content" style={{ paddingBottom: 0 }}>
@@ -115,5 +139,5 @@ export function AppShell() {
 }
 
 function Section({ title, children }: { title?: string; children: ReactNode }) {
-  return <>{title && <div className="nav-section">{title}</div>}{children}</>;
+  return <>{title && <div className="nav-section" aria-hidden="true"><span>{title}</span></div>}{children}</>;
 }
