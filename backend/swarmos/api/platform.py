@@ -6,7 +6,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
@@ -29,6 +29,7 @@ from swarmos.core.security import (
 from swarmos.db import get_db, utcnow
 from swarmos.integrations.adapters import ADAPTERS
 from swarmos.integrations.sync import city_source_status
+from swarmos.jobs.dispatch import dispatch
 from swarmos.jobs.queue import enqueue
 from swarmos.ml import pipeline
 from swarmos.models import (
@@ -82,7 +83,7 @@ class SyncIn(BaseModel):
 
 
 @router.post("/cities/{city_id}/integrations/{source_id}/sync", status_code=202, tags=["integrations"])
-def trigger_sync(source_id: str, body: SyncIn, city: City = Depends(city_access), principal: Principal = Depends(require_role("operator")),
+def trigger_sync(source_id: str, body: SyncIn, background_tasks: BackgroundTasks, city: City = Depends(city_access), principal: Principal = Depends(require_role("operator")),
                  db: Session = Depends(get_db)) -> dict[str, Any]:
     adapter = ADAPTERS.get(source_id)
     if adapter is None:
@@ -95,6 +96,7 @@ def trigger_sync(source_id: str, body: SyncIn, city: City = Depends(city_access)
     job = enqueue(db, "sync", {"source_id": source_id, "city_id": city_id, "force": body.force},
                   dedupe_key=f"manual:{source_id}:{city_id}:{bucket}", priority=2, max_attempts=1, created_by=principal.id)
     audit(db, "integration.sync", principal, target_type="data_source", target_id=source_id, city_id=city.id)
+    dispatch(background_tasks, db, job)
     return {"job_id": job.id, "status": job.status}
 
 
@@ -131,7 +133,7 @@ class TrainIn(BaseModel):
 
 
 @router.post("/models/{model_name}/train", status_code=202, tags=["models"])
-def train(model_name: str, body: TrainIn, principal: Principal = Depends(require_role("admin")), db: Session = Depends(get_db)) -> dict[str, Any]:
+def train(model_name: str, body: TrainIn, background_tasks: BackgroundTasks, principal: Principal = Depends(require_role("admin")), db: Session = Depends(get_db)) -> dict[str, Any]:
     if model_name not in {c["model_name"] for c in pipeline.available_configs(get_settings())}:
         raise not_found("Model config")
     active = db.scalars(select(Job).where(Job.kind == "train_model", Job.status.in_(("queued", "running")))).all()
@@ -140,6 +142,7 @@ def train(model_name: str, body: TrainIn, principal: Principal = Depends(require
     job = enqueue(db, "train_model", {"model_name": model_name, "promote_if_better": body.promote_if_better, "actor_id": principal.id},
                   priority=6, max_attempts=1, created_by=principal.id)
     audit(db, "model.train_requested", principal, target_type="model", target_id=model_name)
+    dispatch(background_tasks, db, job)
     return {"job_id": job.id, "status": job.status}
 
 
@@ -168,7 +171,11 @@ def rollback(model_name: str, principal: Principal = Depends(require_role("admin
 @router.get("/models/{model_name}/versions/{version}/report", tags=["models"])
 def report(model_name: str, version: str, principal: Principal = Depends(current_principal), db: Session = Depends(get_db)) -> dict[str, Any]:
     mv = db.scalar(select(ModelVersion).where(ModelVersion.model_name == model_name, ModelVersion.version == version))
-    if mv is None or not mv.report_path:
+    if mv is None:
+        raise not_found("Report")
+    if mv.report_md:
+        return {"markdown": mv.report_md}
+    if not mv.report_path:
         raise not_found("Report")
     root = get_settings().ml_root.resolve()
     path = (root / mv.report_path).resolve()
@@ -318,7 +325,7 @@ def system_status(principal: Principal = Depends(require_role("operator")), db: 
     recent_jobs = db.scalars(select(Job).order_by(Job.created_at.desc()).limit(20))
     return {
         "environment": settings.env, "database": settings.database_url.split(":", 1)[0], "demo_mode": settings.demo_mode,
-        "worker": {"embedded": settings.worker_embedded, "job_counts": jobs},
+        "worker": {"embedded": settings.worker_embedded, "job_mode": settings.job_mode, "job_counts": jobs},
         "jobs": [{"id": j.id, "kind": j.kind, "status": j.status, "attempts": j.attempts, "created_at": iso(j.created_at),
                   "finished_at": iso(j.finished_at), "error": (j.error or "")[:300] or None} for j in recent_jobs],
         "model_runtime": get_runtime().health(),

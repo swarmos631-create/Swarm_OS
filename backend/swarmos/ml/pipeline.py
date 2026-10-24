@@ -255,13 +255,15 @@ def train_model(model_name: str, *, job_id: str | None = None, promote_if_better
     (art_dir / "metadata.json").write_text(json.dumps(meta, indent=2, default=str))
     report_path = settings.reports_dir / model_name / f"{version}.md"
     report_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.write_text(_report_md(meta))
+    report_md = _report_md(meta)
+    report_path.write_text(report_md)
 
     with session_scope() as db:
         mv = ModelVersion(model_name=model_name, version=version, task_type=cfg["task_type"], algorithm=cfg["algorithm"],
                           artifact_path=str(art_path.relative_to(settings.ml_root)), artifact_sha256=digest,
                           metrics=out["metrics"], baseline_metrics=out["baseline"], dataset_manifest=meta["dataset"],
-                          config=cfg, report_path=str(report_path.relative_to(settings.ml_root)), passed_gate=gate_ok, job_id=job_id)
+                          config=cfg, report_path=str(report_path.relative_to(settings.ml_root)), passed_gate=gate_ok, job_id=job_id,
+                          artifact_blob=art_path.read_bytes(), report_md=report_md)
         db.add(mv)
         db.add(AuditLog(action="model.train", actor_id=actor_id, target_type="model_version", target_id=f"{model_name}@{version}",
                         details={"gate": gate_ok, "metrics": out["metrics"]}))
@@ -282,8 +284,7 @@ def promote(model_name: str, version: str, *, actor_id: str | None = None, force
             raise PromotionError("Unknown model version")
         if not mv.passed_gate and not force:
             raise PromotionError("Version did not pass its evaluation gate; promotion requires force by an admin")
-        path = settings.ml_root / mv.artifact_path
-        if not path.exists() or sha256_file(path) != mv.artifact_sha256:
+        if artifact_bytes(mv, settings) is None:
             raise PromotionError("Artifact missing or checksum mismatch; refusing to promote")
         for other in db.scalars(select(ModelVersion).where(ModelVersion.model_name == model_name, ModelVersion.status == "promoted")):
             other.status = "archived"
@@ -291,6 +292,21 @@ def promote(model_name: str, version: str, *, actor_id: str | None = None, force
         db.add(AuditLog(action="model.promote", actor_id=actor_id, target_type="model_version", target_id=f"{model_name}@{version}",
                         details={"forced": force}))
     get_runtime().artifacts.invalidate(model_name)
+
+
+def artifact_bytes(mv: ModelVersion, settings: Settings) -> bytes | None:
+    """Artifact content whose SHA-256 matches the registry: the database copy first, then the local file."""
+    candidates: list[bytes] = []
+    if mv.artifact_blob:
+        candidates.append(mv.artifact_blob)
+    path = Path(mv.artifact_path)
+    path = path if path.is_absolute() else settings.ml_root / path
+    if path.exists():
+        candidates.append(path.read_bytes())
+    for data in candidates:
+        if hashlib.sha256(data).hexdigest() == mv.artifact_sha256:
+            return data
+    return None
 
 
 def rollback(model_name: str, *, actor_id: str | None = None, settings: Settings | None = None) -> str:

@@ -51,6 +51,18 @@ def claim(db: Session, worker_id: str, kinds: list[str] | None = None, lease_s: 
     return None
 
 
+def claim_by_id(db: Session, job_id: str, worker_id: str, lease_s: int = 300) -> Job | None:
+    """Claim one specific queued job (compare-and-set), for inline execution right after enqueueing."""
+    now = utcnow()
+    res = db.execute(
+        update(Job).where(Job.id == job_id, Job.status == "queued")
+        .values(status="running", locked_by=worker_id, locked_until=now + timedelta(seconds=lease_s),
+                started_at=now, attempts=Job.attempts + 1)
+    )
+    db.commit()
+    return db.get(Job, job_id) if getattr(res, "rowcount", 0) == 1 else None
+
+
 def complete(db: Session, job_id: str, result: dict[str, Any] | None = None) -> None:
     job = db.get(Job, job_id)
     if job:

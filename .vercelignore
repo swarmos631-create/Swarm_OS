@@ -1,0 +1,18 @@
+# Keep CLI uploads (`vercel deploy`) small and free of local state. Git deployments already exclude .gitignore'd files.
+**/.venv
+**/node_modules
+**/__pycache__
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+var
+.env
+.env.*
+!.env.example
+ml/artifacts
+ml/reports
+frontend/dist
+frontend/dev-dist
+frontend/test-results
+frontend/playwright-report
+backend/tests

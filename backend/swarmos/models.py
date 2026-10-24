@@ -18,6 +18,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -389,6 +390,10 @@ class ModelVersion(Base):
     dataset_manifest: Mapped[dict] = mapped_column(default=dict)
     config: Mapped[dict] = mapped_column(default=dict)
     report_path: Mapped[str | None] = mapped_column(String(400))
+    # The artifact and report are also kept in the database so any instance (including serverless ones without
+    # a shared disk) can load the promoted model. The checksum above is verified before unpickling.
+    artifact_blob: Mapped[bytes | None] = mapped_column(LargeBinary, deferred=True)
+    report_md: Mapped[str | None] = mapped_column(Text, deferred=True)
     status: Mapped[str] = mapped_column(String(16), default="candidate")  # candidate|promoted|archived
     passed_gate: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(TS, default=utcnow)

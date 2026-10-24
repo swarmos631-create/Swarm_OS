@@ -13,6 +13,7 @@ route a request off-host unless an operator sets SWARMOS_ALLOW_REMOTE_MODEL_HOST
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import logging
 import threading
@@ -93,14 +94,13 @@ class SklearnArtifacts:
             ).first()
             if mv is None:
                 raise ModelUnavailable(f"No promoted version of '{name}'. Train and promote it in the Model Lab.")
-            path = Path(mv.artifact_path)
-            if not path.is_absolute():
-                path = self.settings.ml_root / path
-            if not path.exists():
-                raise ModelUnavailable(f"Artifact for {name}@{mv.version} is missing on disk")
-            if sha256_file(path) != mv.artifact_sha256:
-                raise ModelUnavailable(f"Artifact checksum mismatch for {name}@{mv.version}; refusing to load")
-            bundle = joblib.load(path)  # artifacts are produced locally by our own pipeline (trusted path)
+            from swarmos.ml.pipeline import artifact_bytes
+
+            data = artifact_bytes(mv, self.settings)
+            if data is None:
+                raise ModelUnavailable(f"Artifact for {name}@{mv.version} is missing or fails its checksum; refusing to load")
+            # Produced by our own training pipeline and checksum-verified against the registry before unpickling.
+            bundle = joblib.load(io.BytesIO(data))
             return LoadedModel(
                 name=name, version=mv.version, algorithm=mv.algorithm, estimator=bundle["estimator"],
                 feature_spec=bundle.get("feature_spec", {}), metrics=mv.metrics,

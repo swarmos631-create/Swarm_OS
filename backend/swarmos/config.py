@@ -7,17 +7,30 @@ raised at startup with actionable messages instead of failing later at request t
 from __future__ import annotations
 
 import ipaddress
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import urlparse
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 CsvList = Annotated[list[str], NoDecode]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+PACKAGE_DIR = Path(__file__).resolve().parent
+# Vercel sets VERCEL=1 in builds and functions. Functions there have a read-only filesystem (except /tmp), no
+# persistent disk, and no process that outlives a request — so storage and background work are configured differently.
+ON_VERCEL = os.environ.get("VERCEL") == "1"
+
+
+def normalize_database_url(url: str) -> str:
+    """Accept the plain postgres:// URLs that hosting providers inject and select the psycopg (v3) driver."""
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url[len(prefix):]
+    return url
 
 
 def _is_loopback(url: str) -> bool:
@@ -36,12 +49,17 @@ class Settings(BaseSettings):
         env_file=(str(REPO_ROOT / ".env"), ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
+        populate_by_name=True,
     )
 
     env: Literal["development", "test", "production"] = "development"
     log_level: str = "INFO"
 
-    database_url: str = f"sqlite:///{REPO_ROOT / 'var' / 'swarmos.db'}"
+    # Falls back to the DATABASE_URL / POSTGRES_URL variables that Vercel's Postgres integrations inject.
+    database_url: str = Field(
+        default=f"sqlite:///{REPO_ROOT / 'var' / 'swarmos.db'}",
+        validation_alias=AliasChoices("SWARMOS_DATABASE_URL", "DATABASE_URL", "POSTGRES_URL"),
+    )
 
     # Security
     session_ttl_hours: int = Field(default=12, ge=1, le=24 * 30)
@@ -74,7 +92,12 @@ class Settings(BaseSettings):
     imd_api_base_url: str | None = None  # IMD access is by arrangement; unset == unavailable
 
     # Worker / orchestration
+    # "worker": a long-running worker (embedded thread or `swarmos worker`) drains the job queue.
+    # "inline": each job runs right after the request that enqueued it (serverless); cron drains leftovers.
+    job_mode: Literal["worker", "inline"] = "inline" if ON_VERCEL else "worker"
     worker_embedded: bool = True
+    cron_secret: str | None = Field(default=None, validation_alias=AliasChoices("SWARMOS_CRON_SECRET", "CRON_SECRET"))
+    cron_budget_seconds: float = Field(default=240.0, gt=0, le=780)
     worker_poll_seconds: float = 1.0
     agent_max_concurrency: int = Field(default=6, ge=1, le=32)
     agent_default_timeout_seconds: float = Field(default=20.0, gt=0)
@@ -89,8 +112,11 @@ class Settings(BaseSettings):
     model_max_concurrency: int = Field(default=2, ge=1, le=8)
     llm_narratives_enabled: bool = False
 
-    # ML paths
-    ml_root: Path = REPO_ROOT / "ml"
+    # ML paths. Configs ship inside the package; datasets/artifacts/reports are scratch space (artifacts and
+    # reports are also stored in the database, so serverless instances can load models without a shared disk).
+    ml_root: Path = Path("/tmp/swarmos-ml") if ON_VERCEL else REPO_ROOT / "ml"  # noqa: S108 — Vercel's only writable dir
+    ml_configs_path: Path = Field(default=PACKAGE_DIR / "ml" / "configs",
+                                  validation_alias=AliasChoices("SWARMOS_ML_CONFIGS_DIR", "ml_configs_path"))
 
     # Dev bootstrap
     dev_seed_password: str | None = None
@@ -107,8 +133,21 @@ class Settings(BaseSettings):
             return [s.strip() for s in v.split(",") if s.strip()]
         return v
 
+    @field_validator("database_url", mode="after")
+    @classmethod
+    def _normalize_db(cls, v: str) -> str:
+        return normalize_database_url(v)
+
     @model_validator(mode="after")
     def _validate(self) -> Settings:
+        if ON_VERCEL and self.is_sqlite:
+            raise ValueError(
+                "SQLite cannot be used on Vercel: function filesystems are ephemeral and not shared between "
+                "instances. Add a Postgres database (for example Neon from the Vercel Marketplace) so DATABASE_URL "
+                "is set, or set SWARMOS_DATABASE_URL."
+            )
+        if self.job_mode == "inline":
+            self.worker_embedded = False
         if self.cookie_secure is None:
             self.cookie_secure = self.env == "production"
         for name in ("ollama_url", "llamacpp_url"):
@@ -142,7 +181,7 @@ class Settings(BaseSettings):
 
     @property
     def ml_configs_dir(self) -> Path:
-        return self.ml_root / "configs"
+        return self.ml_configs_path
 
     @property
     def reports_dir(self) -> Path:
