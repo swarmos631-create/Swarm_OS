@@ -42,7 +42,7 @@ def me_payload(p: Principal) -> dict[str, object]:
     return {
         "id": p.id, "email": p.email, "display_name": p.display_name, "role": p.role, "all_cities": p.all_cities,
         "city_ids": sorted(p.city_ids), "csrf_token": p.csrf_token,
-        "environment": settings.env, "demo_mode": settings.demo_mode,
+        "environment": settings.env, "demo_mode": settings.demo_mode, "auth_disabled": settings.auth_disabled,
     }
 
 
