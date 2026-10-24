@@ -33,13 +33,19 @@ The Model Lab page shows whether each provider is reachable and whether the conf
 ## Pipeline (`backend/swarmos/ml/`)
 
 ```
-ml/
-├── configs/<model>.yaml          reproducible training config (dataset generator + params, split, hyperparameters, gate)
+backend/swarmos/ml/configs/<model>.yaml   reproducible training config (dataset generator + params, split,
+                                          hyperparameters, gate); package data, override with SWARMOS_ML_CONFIGS_DIR
+ml/                                       scratch root (/tmp/swarmos-ml on Vercel)
 ├── datasets/synthetic/<name>/    data.csv + manifest.json (sha256, rows, licence, provenance, generator params)
 ├── datasets/raw|processed/       place authorised real datasets here (git-ignored)
-├── artifacts/<model>/<version>/  model.joblib + metadata.json (git-ignored)
-└── reports/<model>/<version>.md  evaluation report (git-ignored)
+├── artifacts/<model>/<version>/  model.joblib + metadata.json (git-ignored; local copy)
+└── reports/<model>/<version>.md  evaluation report (git-ignored; local copy)
 ```
+
+The registry row is the source of truth: `model_versions.artifact_blob` holds the joblib bytes and
+`model_versions.report_md` the report. Loading verifies the blob's SHA-256 against the registry, so any API instance
+(including serverless ones without a shared disk) can serve a promoted model. Training jobs are regular
+`train_model` jobs and follow `SWARMOS_JOB_MODE` (see [ARCHITECTURE.md](ARCHITECTURE.md#background-work)).
 
 Steps in `pipeline.train_model`:
 
@@ -55,7 +61,7 @@ Steps in `pipeline.train_model`:
 6. **Gate**: the configured metric must beat the baseline by the margin. Versions that fail the gate are registered
    but cannot be promoted without an audited admin *force*.
 7. Write the artifact, metadata (environment, checksums, split sizes) and a Markdown report; register a
-   `model_versions` row.
+   `model_versions` row that stores the artifact bytes and the report.
 8. Optionally promote. `promote` re-verifies the artifact checksum and archives the previous version. `rollback`
    re-promotes the previously promoted version.
 
