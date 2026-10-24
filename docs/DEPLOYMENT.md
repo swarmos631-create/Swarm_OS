@@ -45,7 +45,9 @@ Serverless mode switches on automatically when `VERCEL=1` (set by the platform):
 
 * **Database:** SQLite is refused at startup, because function disks are ephemeral and not shared. Add a Postgres
   database from the Vercel Marketplace (for example Neon); the injected `DATABASE_URL` or `POSTGRES_URL` is picked
-  up and rewritten to the `postgresql+psycopg://` driver. `SWARMOS_DATABASE_URL` takes precedence if set.
+  up and rewritten to the `postgresql+psycopg://` driver. `SWARMOS_DATABASE_URL` takes precedence if set, then
+  `SWARMOS_DATABASE_DATABASE_URL`, which is what Neon injects when connected with the custom environment variable
+  prefix `SWARMOS_DATABASE`. Use that prefix to switch to a new database while an old one is still connected.
 * **Jobs:** `SWARMOS_JOB_MODE=inline`. A request that enqueues a job (agent task, sync, training) returns `202`
   immediately, then runs the job in the same function invocation after the response is sent. The cron at
   `/api/internal/cron` schedules periodic syncs and drains any queued or expired-lease jobs within
@@ -67,7 +69,18 @@ Serverless mode switches on automatically when `VERCEL=1` (set by the platform):
    * `SWARMOS_DEMO_MODE=false` once real feeds are configured (or keep `true` for a labelled demo).
    * Optional: `SWARMOS_OGD_API_KEY`, `SWARMOS_SYNC_CITIES`, and `SWARMOS_TRUSTED_HOSTS=<your-domain>` (Production
      only; preview URLs would be rejected).
-4. Initialise the database **from your machine**, against the production URL (migrations do not run in the build):
+4. Initialise the database. Either **from the deployment** (works even when Postgres is not reachable from your
+   machine; idempotent, guarded by `CRON_SECRET`):
+
+   ```bash
+   curl -X POST https://<deployment>/api/internal/bootstrap \
+     -H "Authorization: Bearer $CRON_SECRET" -H 'content-type: application/json' \
+     -d '{"admin": {"email": "admin@example.gov.in", "password": "<12+ chars, mixed case + digit>"}}'
+   ```
+
+   This runs `alembic upgrade head`, seeds the catalog, source registry and sample documents (no demo data), and
+   creates the admin with access to all cities unless that email already exists. Omit the body to only migrate
+   and seed. Or **from your machine**, against the production URL:
 
    ```bash
    export SWARMOS_ENV=production SWARMOS_DATABASE_URL='postgresql+psycopg://…'   # from the Neon dashboard
@@ -76,16 +89,17 @@ Serverless mode switches on automatically when `VERCEL=1` (set by the platform):
    backend/.venv/bin/swarmos create-user admin@example.gov.in admin --all-cities
    ```
 
-   Repeat `swarmos migrate` before deploying any commit that adds a migration.
+   Migrations do not run in the build: call the bootstrap endpoint (or `swarmos migrate`) after deploying any
+   commit that adds a migration.
 5. Deploy. Check `GET /api/health/ready` on the deployment URL.
 
 ### Limits to check for your plan
 
 * **Region (latency):** the API and the database must be in the same region. A dashboard request makes about 50
   database queries, so each cross-continent round trip (~200 ms) turns into seconds of lag. `vercel.json` pins
-  functions to Washington, D.C. (`"regions": ["iad1"]`) because the Neon database is in AWS US East (N. Virginia).
-  If you move the database, change `regions` to match (for example `sin1` with Neon in Singapore, which is also
-  closer to users in India). Verify with `GET /api/health/ready`: `db_latency_ms` should be a few milliseconds, and
+  functions to Singapore (`"regions": ["sin1"]`) because the Neon database is in AWS Asia Pacific (Singapore,
+  `ap-southeast-1`), the closest Neon region to users in India. If you move the database, change `regions` to
+  match (for example `iad1` with Neon in AWS US East). Verify with `GET /api/health/ready`: `db_latency_ms` should be a few milliseconds, and
   `region` shows where the function ran.
 * **Cron frequency:** `vercel.json` schedules the cron once a day (`"0 6 * * *"`), which the Hobby plan allows.
   On Pro you can run it more often, for example every 30 minutes (`"*/30 * * * *"`). Between runs, data refreshes on *Sync now*.
@@ -117,7 +131,7 @@ Migrations never delete user data. Destructive changes need an explicit, reviewe
 | Forecast agents say `baseline:seasonal_naive` | No promoted model. Run `swarmos ml train-all --promote-if-better`. |
 | Vercel function fails with "SQLite cannot be used on Vercel" | No Postgres is connected. Add one from the Marketplace or set `SWARMOS_DATABASE_URL`. |
 | Vercel: `500 FUNCTION_INVOCATION_FAILED` | The function crashed while starting. Check the deployment's build log for `PYTHON_HANDLER_NOT_FOUND` or `LAMBDA_SIZE_EXCEEDED` (a failed build leaves the previous deployment live), then the function logs. |
-| Vercel: readiness says migrations are pending | Run `swarmos migrate` against the production database (step 4 above). |
+| Vercel: readiness says migrations are `missing` | Call `POST /api/internal/bootstrap` with the cron secret, or run `swarmos migrate` against the production database (step 4 above). |
 | `database is locked` on SQLite | Use one process with the embedded worker, or move to PostgreSQL. |
 | Startup error about a non-loopback model URL | The local-only policy is working. Use `127.0.0.1`, or set `SWARMOS_ALLOW_REMOTE_MODEL_HOSTS=true` for your own server. |
 | Lost dev passwords | `rm var/swarmos.db && swarmos init` (dev only) or `swarmos create-user`. |

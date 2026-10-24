@@ -55,10 +55,12 @@ class Settings(BaseSettings):
     env: Literal["development", "test", "production"] = "development"
     log_level: str = "INFO"
 
-    # Falls back to the DATABASE_URL / POSTGRES_URL variables that Vercel's Postgres integrations inject.
+    # Falls back to the variables that Vercel's Postgres integrations inject: SWARMOS_DATABASE_DATABASE_URL when the
+    # Neon integration is connected with the custom prefix "SWARMOS_DATABASE" (which lets a new database take over
+    # from an old one that is still connected), otherwise the unprefixed DATABASE_URL / POSTGRES_URL.
     database_url: str = Field(
         default=f"sqlite:///{REPO_ROOT / 'var' / 'swarmos.db'}",
-        validation_alias=AliasChoices("SWARMOS_DATABASE_URL", "DATABASE_URL", "POSTGRES_URL"),
+        validation_alias=AliasChoices("SWARMOS_DATABASE_URL", "SWARMOS_DATABASE_DATABASE_URL", "DATABASE_URL", "POSTGRES_URL"),
     )
 
     # Security
