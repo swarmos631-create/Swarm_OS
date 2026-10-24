@@ -9,7 +9,7 @@
 ## Production steps
 
 ```bash
-python3 -m venv /opt/swarmos/venv && /opt/swarmos/venv/bin/pip install -e backend
+python3 -m venv /opt/swarmos/venv && /opt/swarmos/venv/bin/pip install -e "backend[ml]"
 npm --prefix frontend ci && npm --prefix frontend run build
 export SWARMOS_ENV=production SWARMOS_DATABASE_URL=postgresql+psycopg://swarmos@db/swarmos SWARMOS_TRUSTED_HOSTS=ops.example.gov.in
 /opt/swarmos/venv/bin/swarmos migrate
@@ -50,9 +50,11 @@ Serverless mode switches on automatically when `VERCEL=1` (set by the platform):
   immediately, then runs the job in the same function invocation after the response is sent. The cron at
   `/api/internal/cron` schedules periodic syncs and drains any queued or expired-lease jobs within
   `SWARMOS_CRON_BUDGET_SECONDS` (default 240 s, kept under the function's max duration).
-* **ML:** training configs ship inside the package; datasets and scratch files go to `/tmp/swarmos-ml`. Model
-  artifacts and reports are stored in the database (`model_versions.artifact_blob`, `report_md`) and loaded with
-  checksum verification, so every instance sees the promoted model.
+* **ML:** the function is installed **without** the optional `ml` extra (scikit-learn, SciPy, joblib), which
+  would push the Python bundle past Vercel's function size limit. Agents that use a trained model therefore run
+  their deterministic baselines (seasonal-naive forecasts, keyword rules, engineering bands) and say so in their
+  result; the Model Lab lists the registry but answers training requests with `503 training_unavailable`.
+  Run SwarmOS on a full installation (`pip install -e "backend[ml]"`) when you need trained models.
 
 ### Steps
 
@@ -72,7 +74,6 @@ Serverless mode switches on automatically when `VERCEL=1` (set by the platform):
    backend/.venv/bin/swarmos migrate
    backend/.venv/bin/swarmos seed --no-demo
    backend/.venv/bin/swarmos create-user admin@example.gov.in admin --all-cities
-   backend/.venv/bin/swarmos ml train-all --promote-if-better   # optional; artifacts are stored in the DB
    ```
 
    Repeat `swarmos migrate` before deploying any commit that adds a migration.
@@ -84,10 +85,14 @@ Serverless mode switches on automatically when `VERCEL=1` (set by the platform):
   On Pro you can run it more often, for example every 30 minutes (`"*/30 * * * *"`). Between runs, data refreshes on *Sync now*.
 * **Function duration:** 300 s needs Fluid compute (the default for new projects). Lower `maxDuration` and
   `SWARMOS_CRON_BUDGET_SECONDS` together if your plan caps it lower.
-* **Bundle size:** scikit-learn, SciPy and NumPy make the Python bundle large. Vercel's Python limit is 500 MB
-  uncompressed; `.vercelignore` keeps tests, local venvs, ML artifacts and node_modules out of CLI uploads.
+* **Bundle size:** a Python function may be at most 225 MB after Vercel's optimisation. With the `ml` extra the
+  bundle was 245 MB and failed (`LAMBDA_SIZE_EXCEEDED` in `vercel build`); without it the environment is about
+  143 MB. Do not add scikit-learn back to the core dependencies. `.vercelignore` keeps tests, local venvs, ML
+  artifacts and node_modules out of CLI uploads.
 * **Local AI:** Ollama / llama.cpp must run on loopback, which a Vercel function does not have. On Vercel, agents
-  use the trained scikit-learn models and the deterministic fallbacks.
+  use the deterministic fallbacks.
+* **Build locally first:** `npx vercel@65.1.0 build` from the repository root (it needs `.vercel/project.json`,
+  created by `vercel link`) reproduces the cloud build, including the handler check and the size limit.
 
 ## Migrations
 
@@ -105,6 +110,7 @@ Migrations never delete user data. Destructive changes need an explicit, reviewe
 | "3D graphics unavailable" | The browser or GPU lacks WebGL. All other pages work. |
 | Forecast agents say `baseline:seasonal_naive` | No promoted model. Run `swarmos ml train-all --promote-if-better`. |
 | Vercel function fails with "SQLite cannot be used on Vercel" | No Postgres is connected. Add one from the Marketplace or set `SWARMOS_DATABASE_URL`. |
+| Vercel: `500 FUNCTION_INVOCATION_FAILED` | The function crashed while starting. Check the deployment's build log for `PYTHON_HANDLER_NOT_FOUND` or `LAMBDA_SIZE_EXCEEDED` (a failed build leaves the previous deployment live), then the function logs. |
 | Vercel: readiness says migrations are pending | Run `swarmos migrate` against the production database (step 4 above). |
 | `database is locked` on SQLite | Use one process with the embedded worker, or move to PostgreSQL. |
 | Startup error about a non-loopback model URL | The local-only policy is working. Use `127.0.0.1`, or set `SWARMOS_ALLOW_REMOTE_MODEL_HOSTS=true` for your own server. |

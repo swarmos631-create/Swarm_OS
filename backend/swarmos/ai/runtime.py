@@ -23,7 +23,6 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 import httpx
-import joblib
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import select
 
@@ -94,7 +93,11 @@ class SklearnArtifacts:
             ).first()
             if mv is None:
                 raise ModelUnavailable(f"No promoted version of '{name}'. Train and promote it in the Model Lab.")
-            from swarmos.ml.pipeline import artifact_bytes
+            from swarmos.ml.pipeline import artifact_bytes, training_available
+
+            if not training_available():
+                raise ModelUnavailable(f"scikit-learn is not installed in this deployment; '{name}' uses its deterministic fallback")
+            import joblib
 
             data = artifact_bytes(mv, self.settings)
             if data is None:

@@ -16,14 +16,15 @@ dependencies = [
   "pydantic-settings>=2.6",
   "httpx>=0.28",
   "argon2-cffi>=23.1",
-  "scikit-learn>=1.5",
   "numpy>=2.1",
-  "joblib>=1.4",
   "pyyaml>=6.0",
   "psycopg[binary]>=3.2",
 ]
 
 [project.optional-dependencies]
+# Model training and trained-model inference. Left out of the Vercel function to stay within its size limit;
+# without it, agents use their deterministic baselines and the Model Lab reports training as unavailable.
+ml = ["scikit-learn>=1.5", "joblib>=1.4"]
 dev = ["pytest>=8.3", "pytest-asyncio>=0.24", "ruff>=0.8", "mypy>=1.13"]
 
 [project.scripts]

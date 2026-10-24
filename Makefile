@@ -6,7 +6,7 @@ SW := $(PY)/swarmos
 install:
 	python3 -m venv backend/.venv
 	$(PY)/pip install --upgrade pip
-	$(PY)/pip install -e "backend[dev]"
+	$(PY)/pip install -e "backend[dev,ml]"
 	npm --prefix frontend install
 
 init:

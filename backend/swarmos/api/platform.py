@@ -137,6 +137,9 @@ class TrainIn(BaseModel):
 def train(model_name: str, body: TrainIn, background_tasks: BackgroundTasks, principal: Principal = Depends(require_role("admin")), db: Session = Depends(get_db)) -> dict[str, Any]:
     from swarmos.ml import pipeline
 
+    if not pipeline.training_available():
+        raise ApiError(503, "training_unavailable", "Model training is not available in this deployment (scikit-learn is "
+                       "not installed). Train on a full installation; agents use deterministic baselines meanwhile.")
     if model_name not in {c["model_name"] for c in pipeline.available_configs(get_settings())}:
         raise not_found("Model config")
     active = db.scalars(select(Job).where(Job.kind == "train_model", Job.status.in_(("queued", "running")))).all()
