@@ -18,6 +18,8 @@ def test_database_url_fallbacks_and_driver_normalisation(monkeypatch):
     monkeypatch.delenv("SWARMOS_DATABASE_URL")
     monkeypatch.setenv("DATABASE_URL", "postgres://neon/db")
     assert Settings().database_url == "postgresql+psycopg://neon/db"
+    monkeypatch.setenv("SWARMOS_DATABASE_DATABASE_URL", "postgres://neon-prefixed/db")
+    assert Settings().database_url == "postgresql+psycopg://neon-prefixed/db"  # integration with prefix SWARMOS_DATABASE
     monkeypatch.setenv("SWARMOS_DATABASE_URL", "sqlite:///explicit.db")
     assert Settings().database_url == "sqlite:///explicit.db"  # explicit setting wins
 
@@ -129,3 +131,24 @@ def test_without_ml_extra_models_degrade_to_baselines(admin, monkeypatch):
         SklearnArtifacts(get_settings()).load("complaint_classifier")
     with pytest.raises(pipeline.TrainingUnavailable):
         pipeline.train_model("complaint_classifier")
+
+
+def test_bootstrap_requires_secret_and_is_idempotent(client, monkeypatch):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "cron_secret", None)
+    assert client.post("/api/internal/bootstrap").status_code == 503
+    monkeypatch.setattr(settings, "cron_secret", "s3cret-value")
+    assert client.post("/api/internal/bootstrap").status_code == 401
+    auth = {"Authorization": "Bearer s3cret-value"}
+    weak = client.post("/api/internal/bootstrap", headers=auth, json={"admin": {"email": "a@b.co", "password": "weakpassword1"}})
+    assert weak.status_code == 422
+    admin = {"admin": {"email": "Root@Example.org", "password": "Bootstrap-Pass-123"}}
+    first = client.post("/api/internal/bootstrap", headers=auth, json=admin)
+    assert first.status_code == 200, first.text
+    assert first.json()["migrated"] is True and first.json()["admin"] == "created"
+    assert first.json()["seeded"]["cities"] > 0
+    again = client.post("/api/internal/bootstrap", headers=auth, json=admin)
+    assert again.status_code == 200 and again.json()["admin"] == "exists"
+    assert client.post("/api/internal/bootstrap", headers=auth).json().get("admin") is None
+    r = client.post("/api/v1/auth/login", json={"email": "root@example.org", "password": "Bootstrap-Pass-123"})
+    assert r.status_code == 200 and r.json()["role"] == "admin" and r.json()["all_cities"] is True
