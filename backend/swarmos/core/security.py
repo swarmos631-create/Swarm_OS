@@ -12,6 +12,7 @@ from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
 from fastapi import Depends, Request, Response
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from swarmos.config import get_settings
@@ -155,13 +156,37 @@ def destroy_session(db: Session, principal: Principal, response: Response) -> No
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 
+def _open_access_principal(request: Request, db: Session) -> Principal:
+    """The built-in account every session-less request acts as when sign-in is disabled (created on first use)."""
+    email = get_settings().open_access_email.strip().lower()
+    user = db.scalar(select(User).where(User.email == email))
+    if user is None:
+        try:
+            with db.begin_nested():
+                user = User(email=email, display_name="Open access", role="admin", all_cities=True,
+                            password_hash=hash_password(secrets.token_urlsafe(32)))  # unusable: nobody knows it
+                db.add(user)
+        except IntegrityError:  # another request created it first
+            user = db.scalar(select(User).where(User.email == email))
+    if user is None or not user.is_active:
+        raise ApiError(401, "unauthenticated", "The open-access account is disabled")
+    principal = principal_from_user(user)
+    request.state.principal = principal
+    return principal
+
+
 def current_principal(request: Request, db: Session = Depends(get_db)) -> Principal:
     token = request.cookies.get(SESSION_COOKIE)
+    open_access = get_settings().auth_disabled
     if not token:
+        if open_access:
+            return _open_access_principal(request, db)
         raise ApiError(401, "unauthenticated", "Sign in required")
     sess = db.get(AuthSession, _digest(token))
     now = utcnow()
     if sess is None or _as_aware(sess.expires_at) < now:
+        if open_access:
+            return _open_access_principal(request, db)
         raise ApiError(401, "session_expired", "Your session has expired. Sign in again.")
     user = db.get(User, sess.user_id)
     if user is None or not user.is_active:
