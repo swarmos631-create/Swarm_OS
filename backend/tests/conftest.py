@@ -13,8 +13,11 @@ _TMP = Path(tempfile.mkdtemp(prefix="swarmos-test-"))
 REPO = Path(__file__).resolve().parents[2]
 os.environ.update({
     "SWARMOS_ENV": "test",
-    "SWARMOS_DATABASE_URL": f"sqlite:///{_TMP / 'test.db'}",
+    # Set SWARMOS_TEST_DATABASE_URL to run the suite against PostgreSQL (use an empty, disposable database).
+    "SWARMOS_DATABASE_URL": os.environ.get("SWARMOS_TEST_DATABASE_URL", f"sqlite:///{_TMP / 'test.db'}"),
     "SWARMOS_ML_ROOT": str(_TMP / "ml"),
+    "SWARMOS_ML_CONFIGS_DIR": str(_TMP / "ml" / "configs"),
+    "SWARMOS_JOB_MODE": "worker",
     "SWARMOS_DEV_SEED_PASSWORD": "TestPassw0rd-123",
     "SWARMOS_SYNC_ENABLED": "false",
     "SWARMOS_DEMO_MODE": "true",
@@ -24,8 +27,10 @@ os.environ.update({
     "SWARMOS_OLLAMA_URL": "",
     "SWARMOS_LLAMACPP_URL": "",
 })
-os.environ.pop("SWARMOS_OGD_API_KEY", None)
-shutil.copytree(REPO / "ml" / "configs", _TMP / "ml" / "configs")
+for var in ("SWARMOS_OGD_API_KEY", "DATABASE_URL", "POSTGRES_URL", "CRON_SECRET", "VERCEL"):
+    os.environ.pop(var, None)
+# Tests rewrite training configs, so they work on a private copy of the packaged configs.
+shutil.copytree(REPO / "backend" / "swarmos" / "ml" / "configs", _TMP / "ml" / "configs")
 
 PASSWORD = "TestPassw0rd-123"
 

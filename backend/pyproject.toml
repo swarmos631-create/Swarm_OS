@@ -20,20 +20,24 @@ dependencies = [
   "numpy>=2.1",
   "joblib>=1.4",
   "pyyaml>=6.0",
+  "psycopg[binary]>=3.2",
 ]
 
 [project.optional-dependencies]
-postgres = ["psycopg[binary]>=3.2"]
 dev = ["pytest>=8.3", "pytest-asyncio>=0.24", "ruff>=0.8", "mypy>=1.13"]
 
 [project.scripts]
 swarmos = "swarmos.cli:main"
 
+[tool.vercel]
+# Vercel's FastAPI preset looks for `app` here (also set as the service entrypoint in /vercel.json).
+entrypoint = "swarmos.main:app"
+
 [tool.setuptools.packages.find]
 include = ["swarmos*"]
 
 [tool.setuptools.package-data]
-swarmos = ["cities/data/*.json", "demo/documents/*.md"]
+swarmos = ["cities/data/*.json", "demo/documents/*.md", "ml/configs/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

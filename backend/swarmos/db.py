@@ -52,7 +52,9 @@ def make_engine(url: str) -> Engine:
         engine = create_engine(url, connect_args={"check_same_thread": False, "timeout": 15}, future=True)
         event.listen(engine, "connect", _sqlite_pragmas)
     else:
-        engine = create_engine(url, pool_pre_ping=True, pool_size=10, max_overflow=10, future=True)
+        # Small pool with recycling: serverless instances are many and short-lived, and managed Postgres
+        # (e.g. Neon) closes idle connections.
+        engine = create_engine(url, pool_pre_ping=True, pool_size=5, max_overflow=5, pool_recycle=300, future=True)
     return engine
 
 

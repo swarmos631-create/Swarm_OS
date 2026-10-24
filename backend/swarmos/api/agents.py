@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -18,7 +18,8 @@ from swarmos.core.errors import not_found
 from swarmos.core.ratelimit import limiter
 from swarmos.core.security import Principal, city_access, current_principal, require_role
 from swarmos.db import get_db, utcnow
-from swarmos.models import AgentExecution, AgentHandoff, AgentTask, City, ProposedAction
+from swarmos.jobs.dispatch import dispatch
+from swarmos.models import AgentExecution, AgentHandoff, AgentTask, City, Job, ProposedAction
 from swarmos.services.tasks import cancel_task, decide_action, preview_plan, submit_task
 
 router = APIRouter(tags=["agents"])
@@ -109,13 +110,14 @@ def plan_task(body: TaskIn, city: City = Depends(city_access), principal: Princi
 
 
 @router.post("/cities/{city_id}/tasks", status_code=202)
-def create_task(body: TaskIn, response: Response, request: Request, city: City = Depends(city_access),
+def create_task(body: TaskIn, response: Response, request: Request, background_tasks: BackgroundTasks, city: City = Depends(city_access),
                 principal: Principal = Depends(current_principal), db: Session = Depends(get_db)) -> dict[str, Any]:
     limiter.check(f"task:{principal.id}", get_settings().task_rate_limit_per_minute)
     task, created = submit_task(db, principal, city.id, body.prompt, params=body.params, agent_ids=body.agent_ids,
                                 domains=body.domains, idempotency_key=body.idempotency_key)
     if not created:
         response.status_code = 200
+    dispatch(background_tasks, db, db.scalar(select(Job).where(Job.dedupe_key == f"task:{task.id}")))
     return task_dict(task, detail=True)
 
 

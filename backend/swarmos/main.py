@@ -15,7 +15,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from swarmos import __version__
 from swarmos.agents.registry import AGENTS
-from swarmos.api import agents, auth, cities, incidents, platform
+from swarmos.api import agents, auth, cities, incidents, internal, platform
 from swarmos.config import REPO_ROOT, get_settings
 from swarmos.core.errors import install_error_handlers
 from swarmos.core.logging import configure_logging, correlation_id_var
@@ -32,7 +32,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if "alembic_version" not in tables:
         log.error("database_not_migrated", extra={"hint": "Run: swarmos init  (or: alembic upgrade head)"})
     worker = None
-    if settings.worker_embedded and settings.env != "test":
+    if settings.worker_embedded and settings.job_mode == "worker" and settings.env != "test":
         from swarmos.jobs.worker import EmbeddedWorker
 
         worker = EmbeddedWorker()
@@ -95,6 +95,7 @@ def create_app() -> FastAPI:
     prefix = "/api/v1"
     for r in (auth.router, cities.router, incidents.router, agents.router, platform.router):
         app.include_router(r, prefix=prefix)
+    app.include_router(internal.router, prefix="/api")
 
     @app.get("/api/health/live", tags=["system"])
     def live() -> dict[str, str]:

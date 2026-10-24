@@ -96,43 +96,86 @@ class Worker:
         log.info("worker_stopped")
 
     async def _run_job(self, job_id: str, kind: str, payload: dict[str, Any], correlation_id: str | None) -> None:
-        token = correlation_id_var.set(correlation_id or job_id)
-        hb = asyncio.create_task(self._heartbeat(job_id))
-        try:
-            result = await HANDLERS[kind](payload, job_id)
-            with session_scope() as db:
-                queue.complete(db, job_id, result)
-        except Exception as exc:
-            log.exception("job_failed", extra={"job_id": job_id, "kind": kind})
-            with session_scope() as db:
-                queue.fail(db, job_id, f"{type(exc).__name__}: {exc}")
-        finally:
-            hb.cancel()
-            correlation_id_var.reset(token)
-
-    async def _heartbeat(self, job_id: str) -> None:
-        while True:
-            await asyncio.sleep(60)
-            with session_scope() as db:
-                queue.extend_lease(db, job_id)
+        await execute_job(job_id, kind, payload, correlation_id)
 
     def _maybe_schedule(self, now_mono: float) -> None:
-        s = self.settings
-        if not s.sync_enabled or now_mono - self._last_schedule < 60:
+        if not self.settings.sync_enabled or now_mono - self._last_schedule < 60:
             return
         self._last_schedule = now_mono
-        bucket = int(utcnow().timestamp() // (s.sync_interval_minutes * 60))
-        from swarmos.integrations.adapters import ADAPTERS
+        schedule_periodic_syncs(self.settings)
 
+
+async def execute_job(job_id: str, kind: str, payload: dict[str, Any], correlation_id: str | None) -> None:
+    """Run one claimed job to completion, recording success or a retryable failure. Never raises."""
+    token = correlation_id_var.set(correlation_id or job_id)
+    hb = asyncio.create_task(_heartbeat(job_id))
+    try:
+        result = await HANDLERS[kind](payload, job_id)
         with session_scope() as db:
-            for city_id in s.sync_cities:
-                for sid, a in ADAPTERS.items():
-                    if a.spec.scope == "city" and a.configured(s)[0]:
-                        queue.enqueue(db, "sync", {"source_id": sid, "city_id": city_id}, dedupe_key=f"sched:{sid}:{city_id}:{bucket}",
-                                      priority=8, max_attempts=2)
+            queue.complete(db, job_id, result)
+    except Exception as exc:
+        log.exception("job_failed", extra={"job_id": job_id, "kind": kind})
+        with session_scope() as db:
+            queue.fail(db, job_id, f"{type(exc).__name__}: {exc}")
+    finally:
+        hb.cancel()
+        correlation_id_var.reset(token)
+
+
+async def _heartbeat(job_id: str) -> None:
+    while True:
+        await asyncio.sleep(60)
+        with session_scope() as db:
+            queue.extend_lease(db, job_id)
+
+
+def schedule_periodic_syncs(settings: Any) -> int:
+    """Enqueue one sync per configured source and city for the current interval (deduped per time bucket)."""
+    from swarmos.integrations.adapters import ADAPTERS
+
+    bucket = int(utcnow().timestamp() // (settings.sync_interval_minutes * 60))
+    n = 0
+    with session_scope() as db:
+        for city_id in settings.sync_cities:
             for sid, a in ADAPTERS.items():
-                if a.spec.scope == "global" and a.configured(s)[0]:
-                    queue.enqueue(db, "sync", {"source_id": sid}, dedupe_key=f"sched:{sid}:global:{bucket}", priority=8, max_attempts=2)
+                if a.spec.scope == "city" and a.configured(settings)[0]:
+                    queue.enqueue(db, "sync", {"source_id": sid, "city_id": city_id}, dedupe_key=f"sched:{sid}:{city_id}:{bucket}",
+                                  priority=8, max_attempts=2)
+                    n += 1
+        for sid, a in ADAPTERS.items():
+            if a.spec.scope == "global" and a.configured(settings)[0]:
+                queue.enqueue(db, "sync", {"source_id": sid}, dedupe_key=f"sched:{sid}:global:{bucket}", priority=8, max_attempts=2)
+                n += 1
+    return n
+
+
+async def run_job_now(job_id: str) -> bool:
+    """Inline mode: claim and run one specific job in the current process. False if another runner has it."""
+    with session_scope() as db:
+        job = queue.claim_by_id(db, job_id, f"inline:{socket.gethostname()}:{os.getpid()}")
+        claimed = (job.id, job.kind, dict(job.payload), job.correlation_id) if job else None
+    if claimed is None or claimed[1] not in HANDLERS:
+        return False
+    await execute_job(*claimed)
+    return True
+
+
+async def drain_queue(budget_s: float, worker_id: str = "cron") -> dict[str, int]:
+    """Run queued jobs one at a time until the queue is empty or the time budget is spent (used by cron)."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + budget_s
+    stats = {"reaped": 0, "ran": 0}
+    with session_scope() as db:
+        stats["reaped"] = queue.reap_expired(db)
+    while loop.time() < deadline:
+        with session_scope() as db:
+            job = queue.claim(db, worker_id, kinds=list(HANDLERS))
+            claimed = (job.id, job.kind, dict(job.payload), job.correlation_id) if job else None
+        if claimed is None:
+            break
+        await execute_job(*claimed)
+        stats["ran"] += 1
+    return stats
 
 
 class EmbeddedWorker:
