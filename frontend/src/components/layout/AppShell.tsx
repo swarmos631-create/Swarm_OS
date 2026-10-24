@@ -83,7 +83,7 @@ export function AppShell() {
           <div className="row"><b className="small">{me?.display_name}</b><span className="badge b-records">{me?.role}</span></div>
           <span className="xs faint" style={{ overflowWrap: "anywhere" }}>{me?.email}</span>
           {me?.environment !== "production" && <span className="xs" style={{ color: "var(--amber)" }}>Development environment{me?.demo_mode ? " · demo mode" : ""}</span>}
-          <button className="btn sm" onClick={() => void logout()}><Icon name="logout" />Sign out</button>
+          {!me?.auth_disabled && <button className="btn sm" onClick={() => void logout()}><Icon name="logout" />Sign out</button>}
         </div>
       </aside>
       {menu && <div className="overlay" style={{ zIndex: 39 }} onClick={() => setMenu(false)} />}
