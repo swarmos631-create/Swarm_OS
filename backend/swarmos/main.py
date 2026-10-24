@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import os
 import secrets
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -109,9 +111,14 @@ def create_app() -> FastAPI:
     @app.get("/api/health/ready", tags=["system"])
     def ready() -> JSONResponse:
         checks: dict[str, str] = {}
+        db_latency_ms = None
         try:
             with get_engine().connect() as conn:
                 conn.execute(text("SELECT 1"))
+                # One warm round trip: a few ms when the API and database share a region, ~100-250 ms when they do not.
+                t0 = time.perf_counter()
+                conn.execute(text("SELECT 1"))
+                db_latency_ms = round((time.perf_counter() - t0) * 1000, 1)
                 has = "alembic_version" in inspect(conn).get_table_names()
             checks["database"] = "ok"
             checks["migrations"] = "ok" if has else "missing"
@@ -119,7 +126,8 @@ def create_app() -> FastAPI:
             checks["database"] = f"error: {type(exc).__name__}"
         checks["agents"] = "ok" if len(AGENTS) == 50 else "error"
         ok = all(v == "ok" for v in checks.values())
-        return JSONResponse({"status": "ready" if ok else "not_ready", "checks": checks, "version": __version__},
+        return JSONResponse({"status": "ready" if ok else "not_ready", "checks": checks, "version": __version__,
+                             "db_latency_ms": db_latency_ms, "region": os.environ.get("VERCEL_REGION")},
                             status_code=200 if ok else 503)
 
     _mount_frontend(app)

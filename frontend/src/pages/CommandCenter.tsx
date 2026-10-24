@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
-import { api } from "../api/client";
-import type { Dashboard, Indicator } from "../api/types";
+import { dashboardQuery } from "../api/queries";
+import type { Indicator } from "../api/types";
 import { BarList, Sparkline } from "../components/charts";
 import { EmptyState, ErrorState, FreshnessBadge, Panel, ProvenanceBadge, SeverityBadge, Skeleton, StatusBadge, Timestamp } from "../components/ui";
 import { ago, fmtNum, fmtTime, titleCase } from "../lib/format";
@@ -39,8 +39,7 @@ function Kpi({ ind }: { ind: Indicator }) {
 export function CommandCenter() {
   const { cityId, city } = useCity();
   const q = useQuery({
-    queryKey: ["dashboard", cityId],
-    queryFn: () => api<Dashboard>(`/cities/${cityId}/dashboard`),
+    ...dashboardQuery(cityId),
     refetchInterval: 60_000,
   });
   const d = q.data;
