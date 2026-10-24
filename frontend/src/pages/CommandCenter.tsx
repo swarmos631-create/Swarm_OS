@@ -1,17 +1,23 @@
 import { useQuery } from "@tanstack/react-query";
+import { lazy, Suspense, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { dashboardQuery } from "../api/queries";
-import type { Indicator } from "../api/types";
+import type { Indicator, Severity } from "../api/types";
 import { BarList, Sparkline } from "../components/charts";
 import { EmptyState, ErrorState, FreshnessBadge, Panel, ProvenanceBadge, SeverityBadge, Skeleton, StatusBadge, Timestamp } from "../components/ui";
+import { Segmented, Switch } from "../components/ui/widgets";
 import { ago, fmtNum, fmtTime, titleCase } from "../lib/format";
 import { Icon } from "../lib/icons";
 import { useCity } from "../state/city";
 
+// MapLibre is large, so the dashboard map is loaded after the rest of the page.
+const OpsMap = lazy(() => import("../components/map/OpsMap"));
+
 const ACCENT: Record<string, string> = {
   environment: "var(--cyan)", mobility: "var(--blue)", energy: "var(--amber)", water: "#38bdf8", safety: "var(--red)", civic: "var(--violet)",
 };
+const TODAY = new Intl.DateTimeFormat("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
 function Kpi({ ind }: { ind: Indicator }) {
   const unavailable = ind.status === "unavailable";
@@ -43,13 +49,18 @@ export function CommandCenter() {
     refetchInterval: 60_000,
   });
   const d = q.data;
+  const [severity, setSeverity] = useState<"all" | Severity>("all");
+  const [showIncidents, setShowIncidents] = useState(true);
+  const [showFacilities, setShowFacilities] = useState(true);
+  const [mode3d, setMode3d] = useState(true);
+  const sev = d?.incidents.by_severity;
 
   return (
     <>
       <div className="page-head">
         <div>
           <h1>Command Center — {city?.name}</h1>
-          <p>{city?.state} · {city ? `${city.lat.toFixed(3)}°N, ${city.lon.toFixed(3)}°E` : ""} · {d ? <>Updated <Timestamp iso={d.generated_at} /></> : "Loading…"}</p>
+          <p>{TODAY.format(new Date())} · Real-time overview · {d ? <>Updated <Timestamp iso={d.generated_at} /></> : "Loading…"}</p>
         </div>
         <div className="row wrap">
           <Link className="btn" to={`/c/${cityId}/map`}><Icon name="map" />Open map</Link>
@@ -64,6 +75,26 @@ export function CommandCenter() {
           <Icon name="alert" />
           <span><b>Demo data present.</b> {city.name} is a pilot city with SYNTHETIC fixtures for traffic, water, energy, incidents and complaints. Values tagged <span className="badge b-demo">Demo</span> are not real-world facts.</span>
         </div>
+      )}
+
+      <div className="toolbar">
+        <Segmented label="Filter incidents on the map" value={severity} onChange={setSeverity} options={[
+          { id: "all", label: "All", count: d?.incidents.open },
+          { id: "critical", label: "Critical", count: sev?.critical },
+          { id: "high", label: "High", count: sev?.high },
+          { id: "moderate", label: "Moderate", count: sev?.moderate },
+          { id: "low", label: "Low", count: sev?.low },
+        ]} />
+        <div className="spacer" />
+        <Switch label="Incidents" checked={showIncidents} onChange={setShowIncidents} />
+        <Switch label="Facilities" checked={showFacilities} onChange={setShowFacilities} />
+        <Switch label="3D buildings" checked={mode3d} onChange={setMode3d} testId="dashboard-3d" />
+      </div>
+
+      {city && (
+        <Suspense fallback={<div className="ops-map"><Skeleton h={560} /></div>}>
+          <OpsMap city={city} dashboard={d} severity={severity} showIncidents={showIncidents} showFacilities={showFacilities} mode3d={mode3d} onToggle3d={() => setMode3d((m) => !m)} />
+        </Suspense>
       )}
 
       <div className="grid kpi-grid">
