@@ -152,3 +152,22 @@ def test_bootstrap_requires_secret_and_is_idempotent(client, monkeypatch):
     assert client.post("/api/internal/bootstrap", headers=auth).json().get("admin") is None
     r = client.post("/api/v1/auth/login", json={"email": "root@example.org", "password": "Bootstrap-Pass-123"})
     assert r.status_code == 200 and r.json()["role"] == "admin" and r.json()["all_cities"] is True
+
+
+def test_open_access_needs_no_sign_in(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from swarmos.main import create_app
+
+    settings = get_settings()
+    anon = TestClient(create_app())
+    assert anon.get("/api/v1/auth/me").status_code == 401  # sign-in required by default
+    monkeypatch.setattr(settings, "auth_disabled", True)
+    me = anon.get("/api/v1/auth/me")
+    assert me.status_code == 200 and me.json()["role"] == "admin" and me.json()["auth_disabled"] is True
+    assert me.json()["email"] == settings.open_access_email
+    assert anon.get("/api/v1/cities").status_code == 200
+    # Writes work without a CSRF token: there is no session to protect.
+    r = anon.post("/api/v1/cities/bengaluru/tasks", json={"prompt": "check water quality"})
+    assert r.status_code in (200, 201, 202), r.text
+    assert anon.get("/api/v1/auth/me").json()["id"] == me.json()["id"]  # one shared account, created once
