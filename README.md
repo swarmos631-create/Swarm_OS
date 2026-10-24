@@ -56,6 +56,13 @@ make run-api        # terminal 1 — API on :8000
 make dev-web        # terminal 2 — Vite on :5173, proxies /api to :8000
 ```
 
+### Deploying to Vercel
+
+`vercel.json` deploys the PWA (`frontend` service) and the API (`backend` service, a Python function) as one
+project, with `/api/*` routed to the API. It needs a Postgres database (for example Neon from the Vercel
+Marketplace), `SWARMOS_ENV=production` and `CRON_SECRET`; run `swarmos migrate`, `swarmos seed --no-demo` and
+`swarmos create-user` against that database once. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#vercel).
+
 ## Commands
 
 | Command | Purpose |
@@ -74,7 +81,7 @@ make dev-web        # terminal 2 — Vite on :5173, proxies /api to :8000
 * [docs/ML.md](docs/ML.md): datasets, training, evaluation, registry, local LLM setup
 * [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md): data sources, credentials, adding an adapter
 * [docs/SECURITY.md](docs/SECURITY.md): threat model, controls, production hardening
-* [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): production deployment, PostgreSQL/PostGIS, HTTPS, troubleshooting
+* [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): production deployment (single node, scaled, Vercel), PostgreSQL/PostGIS, HTTPS, troubleshooting
 * [docs/PLAN.md](docs/PLAN.md): implementation plan and checklist
 
 ## Licences and attribution

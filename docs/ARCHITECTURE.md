@@ -16,8 +16,11 @@ frontend/ (React + TS + Vite PWA)  ──HTTP /api/v1──▶  backend/swarmos
                                                      ├── ml/           features, synthetic data, datasets, training pipeline
                                                      ├── jobs/         DB-backed queue + worker + scheduler
                                                      └── demo/         bootstrap: catalog, registry, dev accounts, fixtures
-ml/ (configs, synthetic datasets, artifacts, reports)
+ml/ (synthetic datasets, local copies of artifacts and reports; training configs live in backend/swarmos/ml/configs)
 ```
+
+On Vercel the same code runs as two services: the PWA as static files and the API as a Python function behind
+`/api/*` (see [DEPLOYMENT.md](DEPLOYMENT.md#vercel)).
 
 ## Request path
 
@@ -49,7 +52,9 @@ Timestamps are stored and returned as timezone-aware UTC (`UTCDateTime` type) an
 ### SQLite (development) vs PostgreSQL (production)
 
 The schema is written with portable SQLAlchemy types and managed by Alembic (`backend/migrations`). Set
-`SWARMOS_DATABASE_URL=postgresql+psycopg://…` and install `pip install -e "backend[postgres]"` to use PostgreSQL. Differences:
+`SWARMOS_DATABASE_URL=postgresql+psycopg://…` to use PostgreSQL (the psycopg driver is a core dependency; plain
+`postgres://` URLs, and the `DATABASE_URL` / `POSTGRES_URL` variables injected by hosting platforms, are accepted and
+normalised). Differences:
 
 * SQLite runs in WAL mode with a busy timeout. One API process with an embedded worker is the supported dev topology.
 * Upserts use dialect-specific `INSERT … ON CONFLICT` (both supported).
@@ -64,6 +69,17 @@ on PostgreSQL. Leases expire after 5 minutes, and a heartbeat extends them for l
 Job kinds: `agent_task`, `sync`, `sync_city`, `train_model`. A scheduler tick in the worker enqueues periodic syncs
 with time-bucketed dedupe keys, so restarts never double-schedule. User requests never wait for long work; they
 return `202` with a job or task ID.
+
+`SWARMOS_JOB_MODE` selects who runs the queue (`jobs/dispatch.py`):
+
+* `worker` (default off Vercel): the embedded worker thread or `swarmos worker` claims jobs as above.
+* `inline` (default on Vercel): after enqueueing, the request schedules the job with FastAPI `BackgroundTasks`, so
+  it runs in the same invocation after the `202` is sent (`worker.run_job_now`, which still claims the job through
+  the queue, so leases and retries apply). `GET /api/internal/cron`, protected by `CRON_SECRET`, runs the scheduler
+  tick and drains leftover or expired-lease jobs within a time budget.
+
+Trained model artifacts are stored in the database (`model_versions.artifact_blob`), not only on disk, so no
+shared filesystem is needed between processes or instances.
 
 ## Orchestration
 

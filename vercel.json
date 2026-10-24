@@ -43,5 +43,5 @@
     { "source": "/api/(.*)", "destination": { "service": "backend" } },
     { "source": "/(.*)", "destination": { "service": "frontend" } }
   ],
-  "crons": [{ "path": "/api/internal/cron", "schedule": "*/30 * * * *" }]
+  "crons": [{ "path": "/api/internal/cron", "schedule": "0 6 * * *" }]
 }
