@@ -16,14 +16,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-import joblib
 import numpy as np
 import yaml
-from sklearn.ensemble import HistGradientBoostingRegressor, IsolationForest
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, f1_score, mean_absolute_error, precision_recall_fscore_support
-from sklearn.pipeline import FeatureUnion, Pipeline
 from sqlalchemy import select
 
 from swarmos.ai.runtime import get_runtime, sha256_file
@@ -46,6 +40,17 @@ log = logging.getLogger("swarmos.ml")
 
 class PromotionError(Exception):
     pass
+
+
+class TrainingUnavailable(RuntimeError):
+    """scikit-learn (the optional ``ml`` extra) is not installed, e.g. in a serverless deployment."""
+
+
+def training_available() -> bool:
+    """Training and model inference need the ``ml`` extra; registry operations do not."""
+    import importlib.util
+
+    return all(importlib.util.find_spec(m) is not None for m in ("sklearn", "joblib"))
 
 
 def load_config(settings: Settings, model_name: str) -> dict[str, Any]:
@@ -81,6 +86,12 @@ def _seed(seed: int) -> None:
 # ----------------------------------------------------------------------------- trainers
 
 def train_text_classifier(rows: list[dict[str, Any]], cfg: dict[str, Any]) -> dict[str, Any]:
+    # scikit-learn is imported per trainer so the API can run without the optional `ml` extra.
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.metrics import accuracy_score, f1_score
+    from sklearn.pipeline import FeatureUnion, Pipeline
+
     split = cfg["split"]
     rng = random.Random(split["seed"])
     train, val, test = [], [], []
@@ -136,6 +147,9 @@ def train_text_classifier(rows: list[dict[str, Any]], cfg: dict[str, Any]) -> di
 
 
 def train_forecaster(rows: list[dict[str, Any]], cfg: dict[str, Any]) -> dict[str, Any]:
+    from sklearn.ensemble import HistGradientBoostingRegressor
+    from sklearn.metrics import mean_absolute_error
+
     times = [datetime.fromisoformat(r["timestamp"]) for r in rows]
     vals = [float(r["value"]) for r in rows]
     series = hourly_map(times, vals)
@@ -180,6 +194,9 @@ def train_forecaster(rows: list[dict[str, Any]], cfg: dict[str, Any]) -> dict[st
 
 
 def train_anomaly_detector(rows: list[dict[str, Any]], cfg: dict[str, Any]) -> dict[str, Any]:
+    from sklearn.ensemble import IsolationForest
+    from sklearn.metrics import precision_recall_fscore_support
+
     X = np.array([anomaly_features(float(r["frequency_hz"]), float(r["voltage_pu"]), float(r["load_pct"]), float(r["demand_delta_pct"]))
                   for r in rows])
     y = np.array([int(r["label"]) for r in rows])
@@ -227,6 +244,11 @@ def evaluate_gate(cfg: dict[str, Any], metrics: dict[str, Any], baseline: dict[s
 
 def train_model(model_name: str, *, job_id: str | None = None, promote_if_better: bool = False, actor_id: str | None = None,
                 settings: Settings | None = None) -> dict[str, Any]:
+    if not training_available():
+        raise TrainingUnavailable("Model training needs scikit-learn, which is not installed in this deployment "
+                                  "(install the `ml` extra, e.g. pip install -e \"backend[ml]\").")
+    import joblib
+
     settings = settings or get_settings()
     cfg = load_config(settings, model_name)
     _seed(int(cfg["split"]["seed"]))

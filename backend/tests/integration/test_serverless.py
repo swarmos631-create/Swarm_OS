@@ -114,3 +114,18 @@ def test_invalid_configuration_is_served_as_503_instead_of_crashing():
         assert r.status_code == 503
         assert r.json()["error"] == {"code": "misconfigured", "message": "SQLite cannot be used on Vercel.",
                                      "details": None, "correlation_id": None}
+
+
+def test_without_ml_extra_models_degrade_to_baselines(admin, monkeypatch):
+    """The Vercel function ships without scikit-learn: training is refused clearly and inference falls back."""
+    from swarmos.ai.runtime import ModelUnavailable, SklearnArtifacts
+    from swarmos.ml import pipeline
+
+    monkeypatch.setattr(pipeline, "training_available", lambda: False)
+    r = admin.post("/api/v1/models/complaint_classifier/train", json={})
+    assert r.status_code == 503 and r.json()["error"]["code"] == "training_unavailable"
+    assert admin.get("/api/v1/models").status_code == 200  # the registry still lists models
+    with pytest.raises(ModelUnavailable):  # agents catch this and use their deterministic baselines
+        SklearnArtifacts(get_settings()).load("complaint_classifier")
+    with pytest.raises(pipeline.TrainingUnavailable):
+        pipeline.train_model("complaint_classifier")

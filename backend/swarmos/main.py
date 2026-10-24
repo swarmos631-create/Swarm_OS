@@ -161,11 +161,16 @@ def _misconfigured_app(errors: list[str]) -> FastAPI:
     return fallback
 
 
-try:
-    app = create_app()
-except ValidationError as exc:
-    if not ON_VERCEL:
-        raise
-    messages = [str(e["msg"]).removeprefix("Value error, ") for e in exc.errors()]
-    logging.getLogger("swarmos.app").error("invalid_configuration", extra={"errors": messages})
-    app = _misconfigured_app(messages)
+def _build_app() -> FastAPI:
+    try:
+        return create_app()
+    except ValidationError as exc:
+        if not ON_VERCEL:
+            raise
+        messages = [str(e["msg"]).removeprefix("Value error, ") for e in exc.errors()]
+        logging.getLogger("swarmos.app").error("invalid_configuration", extra={"errors": messages})
+        return _misconfigured_app(messages)
+
+
+# Kept as a plain top-level assignment: Vercel's Python builder looks for `app` here statically.
+app = _build_app()
