@@ -43,6 +43,6 @@
     { "source": "/api/(.*)", "destination": { "service": "backend" } },
     { "source": "/(.*)", "destination": { "service": "frontend" } }
   ],
-  "regions": ["iad1"],
+  "regions": ["sin1"],
   "crons": [{ "path": "/api/internal/cron", "schedule": "0 6 * * *" }]
 }
