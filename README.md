@@ -56,12 +56,13 @@ make run-api        # terminal 1 — API on :8000
 make dev-web        # terminal 2 — Vite on :5173, proxies /api to :8000
 ```
 
-### Deploying to Vercel
+### Deploying (Render API + Vercel frontend)
 
-`vercel.json` deploys the PWA (`frontend` service) and the API (`backend` service, a Python function) as one
-project, with `/api/*` routed to the API. It needs a Postgres database (for example Neon from the Vercel
-Marketplace), `SWARMOS_ENV=production` and `CRON_SECRET`; run `swarmos migrate`, `swarmos seed --no-demo` and
-`swarmos create-user` against that database once. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#vercel).
+The API runs on **Render** (`render.yaml`: a Python web service in Singapore with the full `ml` extra and the
+embedded job worker; it runs `swarmos migrate` on every start). The PWA is built on **Vercel** (`vercel.json`),
+which proxies `/api/*` to the Render service, so the browser stays same-origin (no CORS, cookies unchanged). The
+database is Neon Postgres in Singapore. `SWARMOS_AUTH_DISABLED=true` turns off the sign-in screen. See
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#render-api--vercel-frontend).
 
 ## Commands
 
