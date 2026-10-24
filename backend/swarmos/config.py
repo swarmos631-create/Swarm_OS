@@ -64,6 +64,10 @@ class Settings(BaseSettings):
     )
 
     # Security
+    # Open access: no sign-in screen. A request without a valid session acts as one built-in admin account
+    # (open_access_email), so anyone who can reach the URL can do everything. For demos and prototypes only.
+    auth_disabled: bool = False
+    open_access_email: str = "guest@swarmos.local"
     session_ttl_hours: int = Field(default=12, ge=1, le=24 * 30)
     cookie_secure: bool | None = None  # defaults to True in production
     cors_origins: CsvList = Field(default_factory=list)
