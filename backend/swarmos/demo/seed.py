@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 from importlib import resources
 from pathlib import Path
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.orm import Session
 
 from swarmos.ai.retrieval import ingest
@@ -425,6 +425,12 @@ def _refresh_in_background(city_id: str, lock: threading.Lock) -> None:
         lock.release()
 
 
+def _database_bytes(db: Session) -> int | None:
+    if db.get_bind().dialect.name != "postgresql":
+        return None
+    return int(db.scalar(text("SELECT pg_database_size(current_database())")) or 0)
+
+
 def prebuild_cities(settings: Settings, stop: threading.Event | None = None, pause_s: float = 0.5,
                     city_ids: list[str] | None = None) -> int:
     """Generate simulated data for every city that has none yet, so no visitor waits for it on a first visit.
@@ -440,6 +446,7 @@ def prebuild_cities(settings: Settings, stop: threading.Event | None = None, pau
         cities = [c for c in db.scalars(select(City).where(City.is_active.is_(True))) if city_ids is None or c.id in city_ids]
         order = [c.id for c in sorted(cities, key=lambda c: (not c.is_pilot, -(c.population or 0), c.name))
                  if simulation_enabled(settings, c)]
+    budget = settings.prebuild_db_budget_mb * 1024 * 1024
     for city_id in order:
         if stop is not None and stop.is_set():
             break
@@ -450,14 +457,21 @@ def prebuild_cities(settings: Settings, stop: threading.Event | None = None, pau
                 city = db.get(City, city_id)
                 if city is None or _latest_demo(db, city) is not None:
                     continue
+                size = _database_bytes(db)
+                if size is not None and size >= budget:
+                    log.info("simulated_cities_prebuild_budget_reached",
+                             extra={"built": built, "database_mb": round(size / 1048576), "budget_mb": settings.prebuild_db_budget_mb})
+                    break
                 t0 = time.monotonic()
                 seed_static(db, city)
                 seed_series(db, city)
                 db.commit()
                 built += 1
                 log.info("simulated_city_prebuilt", extra={"city": city_id, "seconds": round(time.monotonic() - t0, 1)})
-        except Exception:  # pragma: no cover - logged; the city is then built on its first visit instead
-            log.exception("simulated_city_prebuild_failed", extra={"city": city_id})
+        except Exception as exc:  # pragma: no cover - logged; the city is then built on its first visit instead
+            log.error("simulated_city_prebuild_failed", extra={"city": city_id, "error": str(exc).splitlines()[0][:200]})
+            if "space" in str(exc).lower() or "DiskFull" in type(getattr(exc, "orig", exc)).__name__:
+                break  # out of disk: stop rather than fail for every remaining city
         time.sleep(pause_s)  # leave room for requests and the job worker between cities
     log.info("simulated_cities_prebuild_finished", extra={"built": built, "cities": len(order)})
     return built
