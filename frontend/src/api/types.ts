@@ -234,6 +234,8 @@ export interface TaskDetail extends TaskSummary {
   result: {
     status: string;
     summary: string;
+    answer?: string;
+    suggestions?: string[];
     counts: Record<string, number>;
     confidence: number | null;
     provenance: string[];
@@ -248,6 +250,10 @@ export interface TaskDetail extends TaskSummary {
   handoffs?: { from: string; to: string; digest: string; status: string; at: string }[];
   actions?: ProposedAction[];
 }
+
+export type ChatReply =
+  | { type: "reply"; text: string; suggestions: string[] }
+  | { type: "task"; interpreted_as: string; task: TaskDetail };
 
 export interface DataSource {
   id: string;
