@@ -38,7 +38,7 @@ entrypoint = "swarmos.main:app"
 include = ["swarmos*"]
 
 [tool.setuptools.package-data]
-swarmos = ["cities/data/*.json", "demo/documents/*.md", "ml/configs/*.yaml"]
+swarmos = ["cities/data/*.json", "demo/documents/*.md", "demo/*.json", "ml/configs/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
