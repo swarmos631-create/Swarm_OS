@@ -5,7 +5,14 @@ from __future__ import annotations
 from collections import Counter
 
 from swarmos.agents.contracts import ActionDraft, AgentContext, AgentResult
-from swarmos.agents.skills.common import feature_ref, finding, ok, records_ref, unavailable
+from swarmos.agents.skills.common import (
+    finding,
+    layer_ref,
+    ok,
+    records_ref,
+    source_phrase,
+    unavailable,
+)
 from swarmos.cities import haversine_km
 
 # ----------------------------------------------------------------------------- planning
@@ -20,7 +27,7 @@ def land_use(ctx: AgentContext) -> AgentResult:
             vals[v] = s.points[-1].v
             used.append(s)
     if not vals or sum(vals.values()) == 0:
-        return unavailable(["OpenStreetMap land-use features (run OSM sync)"], "No land-use data synchronised for this city.")
+        return unavailable(["OpenStreetMap land-use features (run the MapmyIndia or OpenStreetMap sync)"], "No land-use data synchronised for this city.")
     total = sum(vals.values())
     shares = {k: round(v / total, 3) for k, v in vals.items()}
     return ok("Mapped land-use mix (by OSM way count): " + ", ".join(f"{k} {v:.0%}" for k, v in shares.items()) + ".",
@@ -132,7 +139,7 @@ def aggregate_health(ctx: AgentContext) -> AgentResult:
 def facility_capacity(ctx: AgentContext) -> AgentResult:
     feats = ctx.data.features(["hospital", "clinic"])
     if not feats:
-        return unavailable(["health facility locations (run OSM sync) or a facility registry"], "No health facilities synchronised.")
+        return unavailable(["health facility locations (run the MapmyIndia or OpenStreetMap sync) or a facility registry"], "No health facilities synchronised.")
     hospitals = [f for f in feats if f.layer == "hospital"]
     clinics = [f for f in feats if f.layer == "clinic"]
     beds = [int(f.properties["beds"]) for f in hospitals if str(f.properties.get("beds", "")).isdigit()]
@@ -141,10 +148,10 @@ def facility_capacity(ctx: AgentContext) -> AgentResult:
     if ctx.city.population:
         metrics["facilities_per_lakh"] = round((len(hospitals) + len(clinics)) / (ctx.city.population / 1e5), 2)
         metrics["population_source"] = ctx.city.population_source
-    return ok(f"{len(hospitals)} hospitals and {len(clinics)} clinics mapped; {len(beds)} hospitals have bed counts.", confidence=0.45,
+    return ok(f"{len(hospitals)} hospitals and {len(clinics)} clinics {source_phrase(feats)}; {len(beds)} hospitals have bed counts.", confidence=0.45,
               method="descriptive:facility_counts", metrics=metrics, provenance={f.provenance for f in feats},
-              extra_refs=[feature_ref("hospital", len(hospitals), "live", "osm-overpass"), feature_ref("clinic", len(clinics), "live", "osm-overpass")],
-              limitations=["Capacity (beds, staff, occupancy) is not available from OSM; connect a facility registry (e.g. HFR/NHRR) for capacity planning.",
+              extra_refs=[layer_ref("hospital", feats), layer_ref("clinic", feats)],
+              limitations=["Capacity (beds, staff, occupancy) is rarely published in map data; connect a facility registry (e.g. HFR/NHRR) for capacity planning.",
                            "Population figure (if shown) is a 2011 census estimate."])
 
 
@@ -183,7 +190,7 @@ COVERAGE_TARGETS_KM = {"hospital": 5.0, "fire_station": 7.0, "police": 3.0, "sch
 def service_coverage(ctx: AgentContext) -> AgentResult:
     feats = ctx.data.features(list(COVERAGE_TARGETS_KM))
     if not feats:
-        return unavailable(["public facility locations (run OSM sync)"], "No facility data synchronised.")
+        return unavailable(["public facility locations (run the MapmyIndia or OpenStreetMap sync)"], "No facility data synchronised.")
     w, s, e, n = ctx.city.bbox
     steps = 12
     cells = [(s + (n - s) * (i + 0.5) / steps, w + (e - w) * (j + 0.5) / steps) for i in range(steps) for j in range(steps)]
@@ -202,4 +209,4 @@ def service_coverage(ctx: AgentContext) -> AgentResult:
               method="spatial:grid_nearest_facility", findings=findings, metrics={"coverage": result, "grid": steps * steps},
               provenance={f.provenance for f in feats},
               limitations=["Grid includes uninhabited areas (water, forest); distance targets are configurable planning heuristics.",
-                           "Uses straight-line distance and OSM-mapped facilities only."])
+                           "Uses straight-line distance and mapped facilities only."])
