@@ -136,3 +136,39 @@ def test_mappls_adapter_requires_key():
     a = ADAPTERS["mappls-places"]
     assert a.configured(Settings(mappls_api_key=None))[0] is False
     assert a.configured(Settings(mappls_api_key="k"))[0] is True
+
+
+def test_met_norway_normalisation_hourly_and_daily():
+    from swarmos.integrations.adapters import normalize_met_norway
+
+    steps = []
+    for h in range(30):
+        t = datetime(2026, 10, 24, 0, tzinfo=UTC).timestamp() + h * 3600
+        steps.append({"time": datetime.fromtimestamp(t, UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                      "data": {"instant": {"details": {"air_temperature": 20 + h % 10, "relative_humidity": 70, "wind_speed": 2.0}},
+                               "next_1_hours": {"details": {"precipitation_amount": 0.5}}}})
+    out = normalize_met_norway({"properties": {"timeseries": steps}}, NOW)
+    metrics = {m.metric for m in out.measurements}
+    assert {"temperature_2m", "relative_humidity_2m", "wind_speed_10m", "precipitation", "daily_temperature_2m_max"} <= metrics
+    wind = next(m for m in out.measurements if m.metric == "wind_speed_10m")
+    assert wind.value == 7.2 and wind.unit == "km/h"  # m/s converted
+    assert any(m.kind == "forecast" for m in out.measurements) and any(m.kind == "model_analysis" for m in out.measurements)
+
+
+def test_alert_city_matching_and_categories():
+    from swarmos.integrations.adapters import _alert_category, city_mentioned
+    from swarmos.models import City
+
+    chennai = City(id="chennai", name="Chennai", lat=13.08, lon=80.27, aliases=["Madras"])
+    assert city_mentioned(chennai, "Chengalpattu, Chennai, Coimbatore districts of Tamil Nadu")
+    assert not city_mentioned(chennai, "Chengalpattu, Coimbatore districts of Tamil Nadu")
+    assert _alert_category("Very Heavy Rain") == "flooding" and _alert_category("Thunderstorm and lightning") == "weather"
+
+
+def test_omt_poi_layer_mapping():
+    from swarmos.integrations.adapters import omt_layer
+
+    assert omt_layer({"class": "hospital", "subclass": "hospital"}) == "hospital"
+    assert omt_layer({"class": "hospital", "subclass": "clinic"}) == "clinic"
+    assert omt_layer({"class": "police", "subclass": "police"}) == "police"
+    assert omt_layer({"class": "bus", "subclass": "bus_stop"}) is None
