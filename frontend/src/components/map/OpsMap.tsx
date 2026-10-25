@@ -29,7 +29,7 @@ export interface OpsMapProps {
 export default function OpsMap({ city, dashboard: d, severity, showIncidents, showFacilities, mode3d, onToggle3d }: OpsMapProps) {
   const { theme } = useTheme();
   const pal = POINT_COLORS[theme];
-  const [base, setBase] = useBaseMap();
+  const [base, setBase, fallbackTo] = useBaseMap();
   const wrap = useRef<HTMLDivElement>(null);
   const container = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<maplibregl.Map | null>(null);
@@ -152,7 +152,7 @@ export default function OpsMap({ city, dashboard: d, severity, showIncidents, sh
       ) : (
         <div className="ops-map-canvas">
           <MapplsCanvas center={{ lat: city.lat, lon: city.lon }} zoom={mode3d ? 16.5 : 13} points={points} mode3d={mode3d} theme={theme} onReady={setMpl}
-            label={`MapmyIndia map of ${city.name}`} onFail={(msg) => { setFailed(`${msg}. Showing the OpenFreeMap 3D map instead.`); setBase("osm"); }} />
+            label={`MapmyIndia map of ${city.name}`} onFail={(msg) => { setFailed(`${msg}. Showing the OpenFreeMap 3D map instead.`); fallbackTo("osm"); }} />
         </div>
       )}
       {failed && <div className="notice error ops-map-error"><Icon name="alert" />{failed}</div>}
