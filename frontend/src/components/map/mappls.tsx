@@ -3,7 +3,7 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import type { MapLike, MapTheme } from "./mapkit";
 
-/** MapmyIndia (Mappls) static key for the Web SDK. Set VITE_MAPPLS_KEY in Vercel; without it the OpenFreeMap base map is used. */
+/** MapmyIndia (Mappls) static key for the Web SDK — the only base map. Set VITE_MAPPLS_KEY in Vercel. */
 export const MAPPLS_KEY = String(import.meta.env.VITE_MAPPLS_KEY ?? "").trim();
 export const hasMappls = MAPPLS_KEY.length > 0;
 
@@ -15,6 +15,7 @@ let loading: Promise<any> | null = null;
 
 /** Load the Mappls Web SDK v3 once. Rejects after 15 s or on a script error (bad key, domain not whitelisted, offline). */
 export function loadMappls(): Promise<any> {
+  if (!hasMappls) return Promise.reject(new Error("MapmyIndia key is not configured — set VITE_MAPPLS_KEY in Vercel and redeploy"));
   if (window.mappls?.Map) return Promise.resolve(window.mappls);
   if (loading) return loading;
   loading = new Promise((resolve, reject) => {
@@ -62,7 +63,7 @@ const call = (obj: any, name: string, ...args: any[]) => {
 /** Wrap a Mappls map so the shared round controls and compass can drive it. Native MapLibre-style methods are used when present. */
 function adapt(m: any): MapLike {
   const zoom = () => Number(call(m, "getZoom") ?? 12);
-  const a = {
+  const a: MapLike = {
     zoomIn: () => (typeof m.zoomIn === "function" ? call(m, "zoomIn") : call(m, "setZoom", zoom() + 1)),
     zoomOut: () => (typeof m.zoomOut === "function" ? call(m, "zoomOut") : call(m, "setZoom", zoom() - 1)),
     getBearing: () => Number(call(m, "getBearing") ?? call(m, "getHeading") ?? 0),
@@ -78,11 +79,9 @@ function adapt(m: any): MapLike {
       if (o.center) call(m, "setCenter", { lat: o.center[1], lng: o.center[0] });
       if (o.zoom != null) call(m, "setZoom", o.zoom);
     },
-    fitBounds: (b: [number, number, number, number]) => call(m, "fitBounds", [[b[0], b[1]], [b[2], b[3]]]),
-    on: (ev: string, fn: () => void) => (typeof m.on === "function" ? call(m, "on", ev, fn) : call(m, "addListener", ev, fn)),
-    off: (ev: string, fn: () => void) => (typeof m.off === "function" ? call(m, "off", ev, fn) : call(m, "removeListener", ev, fn)),
+    fitBounds: (b: [number, number, number, number], o?: { padding?: number }) => call(m, "fitBounds", [[b[0], b[1]], [b[2], b[3]]], { padding: o?.padding ?? 20 }),
   };
-  return a as unknown as MapLike;
+  return a;
 }
 
 export interface MapPoint {
@@ -101,7 +100,7 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&l
 
 /**
  * MapmyIndia vector map with SwarmOS points as coloured markers. Tilts to 60° in 3D mode (Mappls renders its
- * building models at street zoom). Calls `onFail` if the SDK cannot start so the page can fall back to OpenFreeMap.
+ * building models at street zoom). Calls `onFail` if the SDK cannot start, so the page can explain why.
  */
 export function MapplsCanvas({ center, zoom, points, mode3d, theme, onSelect, onReady, onFail, label }: {
   center: { lat: number; lon: number };
@@ -184,35 +183,4 @@ export function MapplsCanvas({ center, zoom, points, mode3d, theme, onSelect, on
   }, [mode3d, loaded]);
 
   return <div id={id} className="mappls-canvas-host" style={{ position: "absolute", inset: 0 }} role="region" aria-label={label} />;
-}
-
-export type BaseMap = "mappls" | "osm";
-
-/** Chosen base map: MapmyIndia when a key is configured (remembered per device), otherwise OpenFreeMap. */
-export function useBaseMap(): [BaseMap, (b: BaseMap) => void, (b: BaseMap) => void] {
-  const [base, setBase] = useState<BaseMap>(() => {
-    if (!hasMappls) return "osm";
-    try {
-      return localStorage.getItem("swarmos.basemap") === "osm" ? "osm" : "mappls";
-    } catch {
-      return "mappls";
-    }
-  });
-  const set = (b: BaseMap) => {
-    setBase(b);
-    try { localStorage.setItem("swarmos.basemap", b); } catch { /* not persisted */ }
-  };
-  // An automatic fallback (SDK failed) is not remembered, so MapmyIndia is retried on the next visit.
-  return [base, set, setBase];
-}
-
-/** "MapmyIndia | OpenFreeMap" toggle; hidden when no Mappls key is configured. */
-export function BaseSwitch({ base, onChange, className = "" }: { base: BaseMap; onChange: (b: BaseMap) => void; className?: string }) {
-  if (!hasMappls) return null;
-  return (
-    <div className={`base-switch ${className}`} role="group" aria-label="Base map">
-      <button type="button" aria-pressed={base === "mappls"} onClick={() => onChange("mappls")}>MapmyIndia</button>
-      <button type="button" aria-pressed={base === "osm"} onClick={() => onChange("osm")}>OpenFreeMap 3D</button>
-    </div>
-  );
 }
