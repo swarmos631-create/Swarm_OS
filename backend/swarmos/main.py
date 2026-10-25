@@ -84,6 +84,22 @@ def _preload_models() -> None:
     threading.Thread(target=run, name="model-preload", daemon=True).start()
 
 
+def _prebuild_cities(stop) -> None:  # type: ignore[no-untyped-def]
+    """Build every city's simulated data in the background so switching to a new city is instant."""
+    import threading
+
+    def run() -> None:
+        try:
+            from swarmos.demo.seed import prebuild_cities
+
+            time.sleep(20)  # let startup work (model training, first syncs) get going first
+            prebuild_cities(get_settings(), stop)
+        except Exception as exc:  # pragma: no cover - never break the API
+            log.warning("city_prebuild_skipped", extra={"error_type": type(exc).__name__})
+
+    threading.Thread(target=run, name="city-prebuild", daemon=True).start()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
@@ -98,6 +114,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # Keep serving: /api/health/ready and the API's 503 responses then explain the problem to operators.
         log.error("database_unreachable_at_startup", extra={"error_type": type(exc).__name__})
     worker = None
+    import threading
+
+    stop_prebuild = threading.Event()
     if settings.worker_embedded and settings.job_mode == "worker" and settings.env != "test":
         from swarmos.jobs.worker import EmbeddedWorker
 
@@ -106,10 +125,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if settings.auto_train_models:
             _queue_missing_models()
         _preload_models()
+        if settings.demo_mode and settings.prebuild_cities:
+            _prebuild_cities(stop_prebuild)
     log.info("api_started", extra={"env": settings.env, "agents": len(AGENTS), "worker_embedded": bool(worker)})
     try:
         yield
     finally:
+        stop_prebuild.set()
         if worker:
             worker.stop()
         get_engine().dispose()
