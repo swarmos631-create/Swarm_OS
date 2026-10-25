@@ -82,8 +82,11 @@ def _upsert(db: Session, model: type, rows: list[dict[str, Any]], conflict_cols:
     ins = sqlite_insert if dialect == "sqlite" else pg_insert
     for i in range(0, len(rows), 500):
         stmt = ins(model).values(rows[i : i + 500])
+        # Rows whose value did not change are left alone: hourly feeds re-send every forecast hour for ~90 cities, and
+        # rewriting identical rows only creates dead tuples and write-ahead log (the cause of a full small volume).
+        where = model.value.is_distinct_from(stmt.excluded.value) if "value" in update_cols and hasattr(model, "value") else None
         stmt = stmt.on_conflict_do_update(
-            index_elements=conflict_cols, set_={c: getattr(stmt.excluded, c) for c in update_cols}
+            index_elements=conflict_cols, set_={c: getattr(stmt.excluded, c) for c in update_cols}, where=where
         )
         db.execute(stmt)
 
