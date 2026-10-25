@@ -185,7 +185,7 @@ def dashboard(city: City = Depends(city_access), principal: Principal = Depends(
 
 
 LAYER_META = {
-    "incidents": ("Incidents", "civic"), "earthquake": ("Earthquakes (USGS, 7 days)", "safety"), "hospital": ("Hospitals", "health"),
+    "incidents": ("Incidents", "civic"), "earthquake": ("Earthquakes ≤800 km (USGS, 7 days)", "safety"), "hospital": ("Hospitals", "health"),
     "clinic": ("Clinics", "health"), "fire_station": ("Fire stations", "safety"), "police": ("Police", "safety"),
     "school": ("Schools", "community"), "bus_station": ("Bus stations", "mobility"), "rail_station": ("Rail stations", "mobility"),
     "water_tower": ("Water towers", "water"), "substation": ("Substations", "energy"), "public_toilet": ("Public toilets", "community"),
