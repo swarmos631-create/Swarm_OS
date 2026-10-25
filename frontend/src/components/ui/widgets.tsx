@@ -1,7 +1,7 @@
 import { useId, type ReactNode } from "react";
 
 /** Speedometer-style gauge: a 240° arc with a green→amber→red track, tick marks and a needle. */
-export function Gauge({ value, max, label, unit, display, bands = ["#7ee08a", "#f5c04a", "#ff6b5b"] }: {
+export function Gauge({ value, max, label, unit, display, bands = ["var(--green)", "var(--amber)", "var(--red)"] }: {
   value: number | null | undefined; max: number; label: string; unit?: string; display?: ReactNode; bands?: [string, string, string] | string[];
 }) {
   const id = useId();
@@ -30,17 +30,17 @@ export function Gauge({ value, max, label, unit, display, bands = ["#7ee08a", "#
             <stop offset="1" stopColor={bands[2]} />
           </linearGradient>
         </defs>
-        <path d={arc(start, start + sweep, r)} stroke="rgba(255,255,255,0.08)" strokeWidth="9" fill="none" strokeLinecap="round" />
+        <path d={arc(start, start + sweep, r)} stroke="var(--track)" strokeWidth="9" fill="none" strokeLinecap="round" />
         {v != null && v > 0 && <path d={arc(start, ang, r)} stroke={`url(#${id})`} strokeWidth="9" fill="none" strokeLinecap="round" />}
         {ticks.map((t, i) => {
           const [x0, y0] = pt(t, r - 10);
           const [x1, y1] = pt(t, r - (i % 4 === 0 ? 17 : 13));
-          return <line key={i} x1={x0} y1={y0} x2={x1} y2={y1} stroke="rgba(255,255,255,0.28)" strokeWidth={i % 4 === 0 ? 1.4 : 0.8} />;
+          return <line key={i} x1={x0} y1={y0} x2={x1} y2={y1} stroke="var(--tick)" strokeWidth={i % 4 === 0 ? 1.4 : 0.8} />;
         })}
         {v != null && (
           <>
-            <line x1={c} y1={c} x2={nx} y2={ny} stroke="#f4f4f5" strokeWidth="3" strokeLinecap="round" />
-            <circle cx={c} cy={c} r="5.5" fill="#f4f4f5" />
+            <line x1={c} y1={c} x2={nx} y2={ny} stroke="var(--text)" strokeWidth="3" strokeLinecap="round" />
+            <circle cx={c} cy={c} r="5.5" fill="var(--text)" />
           </>
         )}
       </svg>
