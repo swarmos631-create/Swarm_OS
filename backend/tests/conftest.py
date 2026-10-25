@@ -21,6 +21,7 @@ os.environ.update({
     "SWARMOS_DEV_SEED_PASSWORD": "TestPassw0rd-123",
     "SWARMOS_SYNC_ENABLED": "false",
     "SWARMOS_DEMO_MODE": "true",
+    "SWARMOS_SIMULATE_ALL_CITIES": "false",
     "SWARMOS_DEMO_PILOT_CITIES": "bengaluru",
     "SWARMOS_WORKER_EMBEDDED": "false",
     "SWARMOS_LOGIN_RATE_LIMIT_PER_MINUTE": "1000",
