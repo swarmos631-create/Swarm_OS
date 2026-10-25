@@ -40,6 +40,7 @@ from swarmos.models import (
     IncidentEvent,
     Measurement,
     ServiceRequest,
+    SyncRun,
     User,
     UserCity,
 )
@@ -87,6 +88,7 @@ def seed_users(db: Session, settings: Settings) -> Path | None:
 
 
 def seed_documents(db: Session) -> int:
+    """Sample SOPs plus reference summaries of public Indian guidance. Idempotent: ingest skips known content."""
     n = 0
     folder = resources.files("swarmos.demo").joinpath("documents")
     meta = {"incident_escalation_sop.md": "internal"}
@@ -97,6 +99,16 @@ def seed_documents(db: Session) -> int:
         title = text.splitlines()[0].lstrip("# ").strip()
         ingest(db, title=title, text=text, source=f"swarmos sample: {entry.name}", classification=meta.get(entry.name, "public"),
                license="CC0-1.0 (SwarmOS sample)", city_id=None, uploaded_by=None, is_synthetic=True)
+        n += 1
+    reference = folder.joinpath("reference")
+    for entry in sorted(reference.iterdir(), key=lambda p: p.name):
+        if not entry.name.endswith(".md"):
+            continue
+        text = entry.read_text(encoding="utf-8")
+        title = text.splitlines()[0].lstrip("# ").strip()
+        ingest(db, title=title, text=text, source=f"SwarmOS reference summary: {entry.name} (see the official source linked inside)",
+               classification="public", license="CC0-1.0 (summary written by SwarmOS; not the official text)",
+               city_id=None, uploaded_by=None, is_synthetic=False)
         n += 1
     return n
 
@@ -363,20 +375,30 @@ def _relayout_in_background(city_id: str, lock: threading.Lock) -> None:
 
 
 def _queue_real_places(db: Session, settings: Settings, city: City) -> None:
-    """With a MapmyIndia key, fetch real facility locations the first time a city is opened (once per day at most)."""
-    if not settings.mappls_api_key:
-        return
-    if db.scalar(select(func.count(GeoFeature.id)).where(GeoFeature.city_id == city.id, GeoFeature.source_id == "mappls-places")):
-        return
+    """Queue the city-level live sources (facilities, CPCB stations, traffic, …) when a city is opened.
+
+    Each configured city-scoped source is synced at most once per its minimum interval; weather and air quality
+    come from batch sources that already cover every city on the schedule.
+    """
+    from swarmos.integrations.adapters import ADAPTERS
     from swarmos.jobs import queue
 
     try:
-        queue.enqueue(db, "sync", {"source_id": "mappls-places", "city_id": city.id},
-                      dedupe_key=f"visit:mappls-places:{city.id}:{utcnow():%Y%m%d}", priority=6, max_attempts=2)
+        for sid, adapter in ADAPTERS.items():
+            spec = adapter.spec
+            if spec.scope != "city" or not spec.scheduled or not adapter.configured(settings)[0]:
+                continue
+            recent = db.scalar(select(func.count(SyncRun.id)).where(
+                SyncRun.source_id == sid, SyncRun.city_id == city.id, SyncRun.status == "succeeded",
+                SyncRun.started_at >= utcnow() - timedelta(seconds=spec.min_sync_interval_s)))
+            if recent:
+                continue
+            queue.enqueue(db, "sync", {"source_id": sid, "city_id": city.id},
+                          dedupe_key=f"visit:{sid}:{city.id}:{utcnow():%Y%m%d}", priority=6, max_attempts=2)
         db.commit()
     except Exception:  # pragma: no cover - best effort; the scheduled sync still runs
         db.rollback()
-        log.exception("mappls_enqueue_failed", extra={"city": city.id})
+        log.exception("visit_enqueue_failed", extra={"city": city.id})
 
 
 def _refresh_in_background(city_id: str, lock: threading.Lock) -> None:
