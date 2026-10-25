@@ -6,6 +6,8 @@ per-agent classes. To add an agent, append a spec here (and a skill if no existi
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from swarmos.agents.contracts import AgentSpec, ScenarioParams, TextParams
 from swarmos.agents.skills import (
     civic,
@@ -29,7 +31,7 @@ AGENTS: list[AgentSpec] = [
       ("traffic.forecast",), ("forecast traffic", "congestion forecast", "peak hour", "tomorrow traffic", "rush hour"),
       mobility.congestion_forecast, data=("traffic",), model="congestion_forecaster"),
     S("public_transit_analyst", "Public Transit Analyst", "mobility", "Assesses mapped transit-station coverage.",
-      ("transit.coverage",), ("transit", "bus", "metro", "rail", "station", "public transport"),
+      ("transit.coverage",), ("transit", "bus", "metro", "rail", "train", "bus station", "railway station", "metro station", "public transport"),
       mobility.public_transit, data=("public_infrastructure",)),
     S("road_incident_triage", "Road Incident Triage Agent", "mobility", "Ranks open road and mobility incidents.",
       ("incidents.triage.road",), ("road incident", "accident", "crash", "breakdown", "road closure"),
@@ -39,10 +41,10 @@ AGENTS: list[AgentSpec] = [
       mobility.mobility_optimization, depends_on=("traffic_flow_analyst", "road_incident_triage")),
     # 2. Environment & climate
     S("air_quality_analyst", "Air Quality Analyst", "environment", "Computes the indicative Indian NAQI and dominant pollutant.",
-      ("air.naqi",), ("air quality", "aqi", "pollution", "pm2.5", "pm10", "smog", "haze"),
+      ("air.naqi",), ("air quality", "aqi", "pollution", "pm2.5", "pm10", "smog", "haze", "air", "breathe", "mask"),
       environment.air_quality, data=("air_quality", "air_quality_station"), output_metrics=("aqi", "category")),
     S("weather_impact_agent", "Weather Impact Agent", "environment", "Classifies 24 h rainfall, heat stress and wind using IMD classes.",
-      ("weather.impact",), ("weather", "rain", "rainfall", "storm", "wind", "barish", "monsoon", "cyclone"),
+      ("weather.impact",), ("weather", "rain", "rainfall", "storm", "wind", "barish", "monsoon", "cyclone", "humid", "humidity", "umbrella", "cold", "weather forecast", "will it rain", "thunderstorm", "lightning"),
       environment.weather_impact, data=("weather",)),
     S("flood_risk_analyst", "Flood Risk Analyst", "environment", "Transparent additive flood-risk index from rainfall and reports.",
       ("flood.risk_index",), ("flood", "flooding", "inundation", "waterlogging", "monsoon"),
@@ -96,14 +98,14 @@ AGENTS: list[AgentSpec] = [
       ("incidents.resources",), ("dispatch", "ambulance", "fire station", "nearest hospital", "response"),
       safety.resource_coordinator, data=("public_infrastructure",), depends_on=("emergency_triage",)),
     S("disaster_impact_analyst", "Disaster Impact Analyst", "safety", "Screens seismic and extreme-weather hazards.",
-      ("hazards.screening",), ("disaster", "earthquake", "hazard", "landslide", "impact"),
+      ("hazards.screening",), ("disaster", "earthquake", "hazard", "landslide", "impact", "alert", "warning", "official alert", "ndma", "gdacs"),
       safety.disaster_impact, data=("seismic",), depends_on=("weather_impact_agent", "flood_risk_analyst"), config={"radius_km": 500}),
     S("public_safety_situation_summarizer", "Public Safety Situation Summarizer", "safety", "Rolls up safety analyses into a brief.",
       ("safety.summary",), ("safety summary", "public safety", "law and order", "situation report"),
       safety.safety_summarizer, depends_on=("emergency_triage", "incident_correlation_agent", "disaster_impact_analyst")),
     # 6. Civic services
     S("complaint_classification_agent", "Complaint Classification Agent", "civic", "Classifies citizen complaints (trained text model).",
-      ("civic.classify",), ("complaint", "grievance", "classify", "citizen request"),
+      ("civic.classify",), ("complaint", "grievance", "classify", "citizen request", "garbage", "trash", "waste", "pothole", "potholes", "stray dog", "noise"),
       civic.complaint_classification, data=("service_requests",), params=TextParams, model="complaint_classifier"),
     S("service_request_routing_agent", "Service Request Routing Agent", "civic", "Routes requests to departments.",
       ("civic.route",), ("route", "department", "assign", "which department"),
@@ -139,7 +141,7 @@ AGENTS: list[AgentSpec] = [
       ("health.trends",), ("health trend", "disease", "dengue", "malaria", "outbreak", "cases"),
       planning_health.aggregate_health, data=("health_aggregate",), min_role="operator"),
     S("facility_capacity_planner", "Facility Capacity Planner", "health", "Health facility counts and density.",
-      ("health.facilities",), ("hospital", "clinic", "health facility", "beds", "capacity"),
+      ("health.facilities",), ("hospital", "clinic", "health facility", "beds", "capacity", "doctor", "doctors", "healthcare"),
       planning_health.facility_capacity, data=("public_infrastructure",)),
     S("community_needs_analyst", "Community Needs Analyst", "health", "Community concerns from service requests.",
       ("community.needs",), ("community", "needs", "residents", "ward issues"),
@@ -148,7 +150,7 @@ AGENTS: list[AgentSpec] = [
       ("community.accessibility",), ("accessibility", "wheelchair", "disabled", "divyang", "barrier-free"),
       planning_health.accessibility, data=("public_infrastructure",)),
     S("public_service_coverage_agent", "Public Service Coverage Agent", "health", "Grid coverage by distance to facilities.",
-      ("community.coverage",), ("coverage", "access to services", "service gap", "underserved"),
+      ("community.coverage",), ("coverage", "access to services", "service gap", "underserved", "police station", "police", "school", "schools", "nearest", "how far"),
       planning_health.service_coverage, data=("public_infrastructure",)),
     # 9. Governance & operations
     S("policy_document_analyst", "Policy Document Analyst", "governance", "Retrieves relevant passages from authorised documents.",
@@ -168,7 +170,7 @@ AGENTS: list[AgentSpec] = [
       governance_cross.resource_allocation, data=("resources",), depends_on=("emergency_triage",)),
     # 10. Cross-domain intelligence
     S("city_situation_summarizer", "City Situation Summarizer", "cross", "Structured roll-up of domain analyses into a situation brief.",
-      ("city.summary",), ("summary", "overview", "situation", "status", "brief", "what is happening", "today"),
+      ("city.summary",), ("summary", "overview", "situation", "brief", "what is happening", "how is the city", "city status", "everything", "full report"),
       governance_cross.city_summary,
       depends_on=("air_quality_analyst", "weather_impact_agent", "emergency_triage", "traffic_flow_analyst",
                   "utility_outage_triage_agent", "flood_risk_analyst")),
@@ -186,6 +188,10 @@ AGENTS: list[AgentSpec] = [
       ("city.plan",), ("plan", "action plan", "operations plan", "what should we do", "recommend"),
       governance_cross.operations_planning, aggregate=True),
 ]
+
+# Agents backed by a trained model need longer on a small shared CPU when a whole swarm runs at once.
+MODEL_AGENT_TIMEOUT_S = 45.0
+AGENTS = [replace(a, timeout_s=a.timeout_s or MODEL_AGENT_TIMEOUT_S) if a.model else a for a in AGENTS]
 
 REGISTRY: dict[str, AgentSpec] = {a.id: a for a in AGENTS}
 
