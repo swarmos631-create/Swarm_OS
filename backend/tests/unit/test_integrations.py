@@ -110,3 +110,29 @@ def test_freshness_states():
     assert freshness(src, None, NOW)["state"] == "never"
     assert freshness(src, datetime(2026, 10, 24, 11, 30, tzinfo=UTC), NOW)["state"] == "fresh"
     assert freshness(src, datetime(2026, 10, 24, 9, 0, tzinfo=UTC), NOW)["state"] == "stale"
+
+
+def test_normalize_mappls_keeps_only_places_with_coordinates():
+    from swarmos.integrations.adapters import normalize_mappls
+
+    pages = [
+        ("hospital", {"suggestedLocations": [
+            {"eLoc": "AB12CD", "placeName": "City Hospital", "placeAddress": "MI Road", "latitude": 26.91, "longitude": 75.78, "distance": 900},
+            {"eLoc": "AB12CD", "placeName": "City Hospital", "latitude": 26.91, "longitude": 75.78},  # duplicate page
+            {"eLoc": "NOCOORD", "placeName": "No coordinates"},
+        ]}),
+        ("police", {"suggestedLocations": [{"mapplsPin": "XY9", "placeName": "Thana", "entryLatitude": "26.9", "entryLongitude": "75.8"}]}),
+    ]
+    out = normalize_mappls(pages)
+    assert [(f.layer, f.external_id, f.name) for f in out.features] == [
+        ("hospital", "mappls/AB12CD", "City Hospital"), ("police", "mappls/XY9", "Thana")]
+    assert out.features[0].properties["placeAddress"] == "MI Road"
+
+
+def test_mappls_adapter_requires_key():
+    from swarmos.config import Settings
+    from swarmos.integrations.adapters import ADAPTERS
+
+    a = ADAPTERS["mappls-places"]
+    assert a.configured(Settings(mappls_api_key=None))[0] is False
+    assert a.configured(Settings(mappls_api_key="k"))[0] is True
