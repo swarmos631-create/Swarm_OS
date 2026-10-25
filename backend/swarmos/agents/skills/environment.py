@@ -159,11 +159,32 @@ def weather_impact(ctx: AgentContext) -> AgentResult:
     if max_gust is not None and max_gust >= 50:
         findings.append(finding("Strong wind gusts", f"Gusts up to {max_gust:.0f} km/h — tree-fall and hoarding risk.", "moderate"))
     used = [s for s in (precip, temp, gust) if s]
-    return ok(f"Next 24 h: {rain24:.0f} mm rain ({rc.lower()}), feels-like max {max_feel or 0:.0f} °C, gusts {max_gust or 0:.0f} km/h.",
+    now_t = ctx.data.latest("temperature_2m", category="weather")
+    tomorrow = _tomorrow(ctx)
+    next24 = f"Next 24 h: {rain24:.0f} mm rain ({rc.lower()}), feels-like max {max_feel or 0:.0f} °C, gusts {max_gust or 0:.0f} km/h."
+    current = f"Now {now_t.value:.0f} °C. " if now_t is not None else ""
+    tmr = (f"Tomorrow: {tomorrow['min']:.0f}–{tomorrow['max']:.0f} °C, {tomorrow['rain']:.0f} mm rain ({rain_class(tomorrow['rain']).lower()})."
+           if tomorrow else "")
+    asks_ahead = any(w in (ctx.prompt or "").lower() for w in ("tomorrow", "week", "weekend", "next few days", "coming days"))
+    summary = f"{tmr} {current}{next24}" if asks_ahead and tmr else f"{current}{next24} {tmr}"
+    return ok(summary.strip(),
               confidence=0.65 * freshness_confidence(used[0], ctx.now), method="rules:imd_rainfall_classes", series=used,
               findings=findings, metrics={"rain_24h_mm": round(rain24, 1), "rain_class": rc,
-                                          "max_apparent_temp_c": max_feel, "max_gust_kmh": max_gust},
+                                          "max_apparent_temp_c": max_feel, "max_gust_kmh": max_gust,
+                                          "current_temp_c": now_t.value if now_t is not None else None, "tomorrow": tomorrow},
               limitations=WEATHER_LIMITS)
+
+
+def _tomorrow(ctx: AgentContext) -> dict[str, float] | None:
+    """Tomorrow's daily forecast (min/max temperature, rain) when the weather source provides daily values."""
+    target = (ctx.now + timedelta(days=1)).date()
+    vals: dict[str, float] = {}
+    for metric, key in (("daily_temperature_2m_max", "max"), ("daily_temperature_2m_min", "min"), ("daily_precipitation_sum", "rain")):
+        for row in ctx.data.forecast_rows(metric, limit=5):
+            if row.observed_at.date() == target:
+                vals[key] = float(row.value)
+                break
+    return vals if {"max", "min", "rain"} <= set(vals) else None
 
 
 def flood_score(rain_24h: float, rain_72h: float, past_48h: float, drainage_reports: int) -> dict[str, Any]:
