@@ -3,23 +3,16 @@ import type { GeoJSONSource, MapGeoJSONFeature } from "maplibre-gl";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "../api/client";
-import { Compass, ensureBuildings, MapControls, maplibregl, set3D, STYLE_URL, webglAvailable } from "../components/map/mapkit";
+import { Compass, ensureBuildings, MapControls, type MapLike, maplibregl, POINT_COLORS, set3D, styleFor, webglAvailable } from "../components/map/mapkit";
+import { BaseSwitch, type MapPoint, MapplsCanvas, useBaseMap } from "../components/map/mappls";
 import { EmptyState, ErrorState, ProvenanceBadge, SeverityBadge } from "../components/ui";
 import { fmtTime, titleCase } from "../lib/format";
 import { Icon } from "../lib/icons";
 import { useCity } from "../state/city";
+import { useTheme } from "../state/theme";
 import { useOnline } from "../state/ui";
 
 const DEFAULT_LAYERS = ["incidents", "earthquake", "hospital", "fire_station", "traffic_sensors", "water_sensors"];
-
-const LAYER_COLORS: Record<string, string> = {
-  earthquake: "#f43f5e", hospital: "#34d399", clinic: "#6ee7b7", fire_station: "#fb923c", police: "#60a5fa", school: "#c4b5fd",
-  bus_station: "#38bdf8", rail_station: "#22d3ee", water_tower: "#7dd3fc", substation: "#fde047", public_toilet: "#a3a3a3",
-  asset_bridge: "#e879f9", asset_road: "#d946ef", traffic_sensors: "#3b82f6", water_sensors: "#06b6d4",
-};
-// MapLibre "match" expression: layer id -> colour, with a neutral fallback.
-const LAYER_MATCH = ["match", ["get", "layer"], ...Object.entries(LAYER_COLORS).flat(), "#94a3b8"] as unknown as maplibregl.ExpressionSpecification;
-const SEV_COLORS = { low: "#60a5fa", moderate: "#fbbf24", high: "#fb923c", critical: "#f43f5e" };
 
 interface Layer { id: string; label: string; group: string; count: number; provenance: (string | null)[] }
 type FC = GeoJSON.FeatureCollection<GeoJSON.Point, Record<string, any>>;
@@ -38,6 +31,10 @@ export default function MapPage() {
   const [mode3d, setMode3d] = useState(true);
   const [search, setSearch] = useState("");
   const hasGL = useMemo(webglAvailable, []);
+  const { theme } = useTheme();
+  const pal = POINT_COLORS[theme];
+  const [base, setBase] = useBaseMap();
+  const [mpl, setMpl] = useState<MapLike | null>(null);
 
   const layersQ = useQuery({ queryKey: ["map-layers", cityId], queryFn: () => api<{ layers: Layer[]; note: string }>(`/cities/${cityId}/map/layers`) });
   const available = layersQ.data?.layers ?? [];
@@ -50,12 +47,12 @@ export default function MapPage() {
 
   // Create the map once.
   useEffect(() => {
-    if (!container.current || !hasGL || !city) return;
+    if (!container.current || !hasGL || !city || base !== "osm") return;
     let map: maplibregl.Map;
     try {
       map = new maplibregl.Map({
         container: container.current,
-        style: STYLE_URL,
+        style: styleFor(theme),
         center: [city.lon, city.lat],
         zoom: city.zoom,
         maxBounds: [[60, 2], [101, 40]],
@@ -74,28 +71,29 @@ export default function MapPage() {
       if (/style|Failed to fetch|NetworkError/i.test(msg)) setMapError("Base map tiles could not be loaded (offline or tile server unavailable). Data layers below may still be listed.");
     });
     map.on("load", () => {
-      ensureBuildings(map);
+      ensureBuildings(map, theme);
+      const layerMatch = ["match", ["get", "layer"], ...Object.entries(pal.layer).flat(), pal.fallback] as unknown as maplibregl.ExpressionSpecification;
       map.addSource("ops", { type: "geojson", data: { type: "FeatureCollection", features: [] }, cluster: true, clusterRadius: 46, clusterMaxZoom: 13 });
       map.addLayer({
         id: "clusters", type: "circle", source: "ops", filter: ["has", "point_count"],
         paint: {
-          "circle-color": "rgba(228,242,138,0.18)", "circle-stroke-color": "#e4f28a", "circle-stroke-width": 1.5,
+          "circle-color": theme === "dark" ? "rgba(155,123,255,0.28)" : "rgba(109,74,255,0.18)", "circle-stroke-color": theme === "dark" ? "#9b7bff" : "#6d4aff", "circle-stroke-width": 2,
           "circle-radius": ["step", ["get", "point_count"], 14, 20, 19, 100, 25],
         },
       });
       map.addLayer({
         id: "cluster-count", type: "symbol", source: "ops", filter: ["has", "point_count"],
         layout: { "text-field": ["get", "point_count_abbreviated"], "text-font": ["Noto Sans Regular"], "text-size": 11 },
-        paint: { "text-color": "#f4f4f5" },
+        paint: { "text-color": theme === "dark" ? "#f5f6ff" : "#15173a" },
       });
       map.addLayer({
         id: "points", type: "circle", source: "ops", filter: ["!", ["has", "point_count"]],
         paint: {
           "circle-radius": ["case", ["==", ["get", "layer"], "incidents"], 7, ["==", ["get", "layer"], "earthquake"], ["+", 3, ["*", 1.6, ["coalesce", ["get", "magnitude"], 3]]], 5],
           "circle-color": ["case",
-            ["==", ["get", "layer"], "incidents"], ["match", ["get", "severity"], "critical", SEV_COLORS.critical, "high", SEV_COLORS.high, "moderate", SEV_COLORS.moderate, SEV_COLORS.low],
-            LAYER_MATCH],
-          "circle-stroke-color": ["case", ["==", ["get", "provenance"], "demo"], "#fbbf24", "#111113"],
+            ["==", ["get", "layer"], "incidents"], ["match", ["get", "severity"], "critical", pal.sev.critical, "high", pal.sev.high, "moderate", pal.sev.moderate, pal.sev.low],
+            layerMatch],
+          "circle-stroke-color": ["case", ["==", ["get", "provenance"], "demo"], pal.demo, pal.stroke],
           "circle-stroke-width": ["case", ["==", ["get", "provenance"], "demo"], 2, 1.2],
           "circle-opacity": 0.92,
         },
@@ -118,7 +116,7 @@ export default function MapPage() {
     });
     return () => { map.remove(); mapRef.current = null; setMapObj(null); setReady(false); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasGL, city?.id ? "has-city" : "no-city"]);
+  }, [hasGL, city?.id ? "has-city" : "no-city", theme, base]);
 
   // City switch: move the viewport.
   useEffect(() => {
@@ -131,7 +129,7 @@ export default function MapPage() {
   // Push data into the clustered source.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !ready) return;
+    if (!map || !ready || !map.getStyle()) return;
     const src = map.getSource("ops") as GeoJSONSource | undefined;
     src?.setData(active.length ? (featQ.data ?? { type: "FeatureCollection", features: [] }) : { type: "FeatureCollection", features: [] });
   }, [featQ.data, ready, active.length]);
@@ -140,8 +138,21 @@ export default function MapPage() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    set3D(map, mode3d);
+    set3D(map, mode3d, true, theme);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- theme changes rebuild the map, which re-applies 3D
   }, [mode3d, ready]);
+
+  const ctl: MapLike | null = base === "osm" ? mapObj : mpl;
+  const points: MapPoint[] = useMemo(() => (active.length ? featQ.data?.features ?? [] : []).map((f: GeoJSON.Feature<GeoJSON.Point, Record<string, any>>, i: number) => {
+    const p = f.properties;
+    const inc = p.layer === "incidents";
+    return {
+      id: String(p.id ?? i), lon: f.geometry.coordinates[0], lat: f.geometry.coordinates[1],
+      color: inc ? pal.sev[p.severity as keyof typeof pal.sev] ?? pal.sev.low : pal.layer[p.layer] ?? pal.fallback,
+      size: inc ? 7 : p.layer === "earthquake" ? 3 + 1.6 * Number(p.magnitude ?? 3) : 5, ring: p.provenance === "demo" ? pal.demo : undefined,
+      title: String(p.title ?? titleCase(String(p.layer))), subtitle: titleCase(String(p.layer)), props: p,
+    };
+  }), [featQ.data, active.length, pal]);
 
   const searchHits = useMemo(() => {
     const s = search.trim().toLowerCase();
@@ -152,7 +163,7 @@ export default function MapPage() {
   const toggle = (id: string) => setSelected((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
   const groups = Array.from(new Set(available.map((l) => l.group)));
 
-  if (!hasGL) {
+  if (!hasGL && base === "osm") {
     return (
       <EmptyState title="3D graphics unavailable" icon="map">
         Your browser or device does not support WebGL, which the interactive map requires. City data remains available on the Command Center, Incidents and Analytics pages.
@@ -168,18 +179,25 @@ export default function MapPage() {
           <p>Clustered city layers from synchronised sources. Base map tiles carry no sensor data.</p>
         </div>
         <div className="row wrap">
+          <BaseSwitch base={base} onChange={(b) => { setMapError(null); setBase(b); }} />
           <div className="row" role="group" aria-label="Map mode">
             <button className="chip" aria-pressed={!mode3d} onClick={() => setMode3d(false)}><Icon name="map" width={14} />2D</button>
             <button className="chip" aria-pressed={mode3d} onClick={() => setMode3d(true)} data-testid="map-3d"><Icon name="cube" width={14} />3D buildings</button>
           </div>
         </div>
       </div>
-      {mode3d && <div className="notice info"><Icon name="info" />3D view extrudes OpenStreetMap building footprints using mapped heights where available (zoom 13+). It is illustrative — not a survey-grade digital twin.</div>}
+      {mode3d && <div className="notice info"><Icon name="info" />{base === "osm" ? "3D view extrudes OpenStreetMap building footprints using mapped heights where available (zoom 13+), coloured by height." : "3D view tilts the MapmyIndia map; building models appear at street-level zoom where MapmyIndia has them."} It is illustrative — not a survey-grade digital twin.</div>}
       {!online && <div className="notice offline"><Icon name="wifiOff" />Offline: only previously cached map tiles can be shown.</div>}
       {mapError && <div className="notice error"><Icon name="alert" />{mapError}</div>}
 
       <div className="map-wrap" data-testid="ops-map" ref={wrapRef}>
-        <div ref={container} style={{ position: "absolute", inset: 0 }} aria-label={`Interactive map of ${city?.name}`} role="region" />
+        {base === "osm" ? (
+          <div ref={container} style={{ position: "absolute", inset: 0 }} aria-label={`Interactive map of ${city?.name}`} role="region" />
+        ) : city && (
+          <MapplsCanvas center={{ lat: city.lat, lon: city.lon }} zoom={mode3d ? 15.5 : city.zoom} points={points} mode3d={mode3d} theme={theme} onReady={setMpl}
+            label={`MapmyIndia map of ${city.name}`} onSelect={(p) => setDetail({ ...p.props, _coords: [p.lon, p.lat] })}
+            onFail={(msg) => { setMapError(`${msg}. Showing the OpenFreeMap 3D map instead.`); setBase("osm"); }} />
+        )}
         <div className="map-overlay map-layers">
           <div className="field" style={{ marginBottom: 8, position: "relative" }}>
             <label className="sr-only" htmlFor="map-search">Search features</label>
@@ -188,7 +206,7 @@ export default function MapPage() {
               <ul className="list panel popover" style={{ position: "absolute", top: 38, left: 0, right: 0, zIndex: 3 }}>
                 {searchHits.map((f: GeoJSON.Feature<GeoJSON.Point, Record<string, any>>, i: number) => (
                   <li key={i} style={{ cursor: "pointer", padding: "6px 10px" }} onClick={() => {
-                    mapRef.current?.flyTo({ center: f.geometry.coordinates as [number, number], zoom: 15 });
+                    ctl?.flyTo({ center: f.geometry.coordinates as [number, number], zoom: 15 });
                     setDetail({ ...f.properties, _coords: f.geometry.coordinates });
                     setSearch("");
                   }}>
@@ -207,16 +225,16 @@ export default function MapPage() {
               {available.filter((l) => l.group === g).map((l) => (
                 <label key={l.id} className="row small" style={{ padding: "3px 2px", cursor: "pointer" }}>
                   <input type="checkbox" checked={selected.includes(l.id)} onChange={() => toggle(l.id)} />
-                  <i style={{ width: 9, height: 9, borderRadius: 3, background: l.id === "incidents" ? SEV_COLORS.high : LAYER_COLORS[l.id] ?? "#94a3b8", display: "inline-block" }} />
+                  <i style={{ width: 9, height: 9, borderRadius: 3, background: l.id === "incidents" ? pal.sev.high : pal.layer[l.id] ?? pal.fallback, display: "inline-block" }} />
                   <span style={{ flex: 1 }}>{l.label}</span>
                   <span className="num xs faint">{l.count}</span>
-                  {l.provenance.includes("demo") && <span className="badge b-demo" style={{ height: 16 }}>demo</span>}
+                  {l.provenance.includes("demo") && <span className="badge b-demo" style={{ height: 16 }}>simulated</span>}
                 </label>
               ))}
             </div>
           ))}
           {!layersQ.isLoading && available.length <= 1 && (
-            <p className="xs faint">Only incidents are available for this city. Run the OpenStreetMap sync from Data Integrations to add facility layers.</p>
+            <p className="xs faint">Only incidents are available for this city. Run the MapmyIndia or OpenStreetMap sync from Data Integrations to add facility layers.</p>
           )}
           {featQ.isFetching && <div className="xs faint">Loading features…</div>}
         </div>
@@ -244,13 +262,13 @@ export default function MapPage() {
           </div>
         )}
 
-        <Compass map={mapObj} />
-        <MapControls map={mapObj} mode3d={mode3d} onToggle3d={() => setMode3d((m) => !m)} fullscreenTarget={wrapRef}
-          onFit={() => city && mapObj?.fitBounds(city.bbox as [number, number, number, number], { padding: 20, duration: 900 })} />
+        {base === "osm" && <Compass map={ctl} />}
+        <MapControls map={ctl} mode3d={mode3d} onToggle3d={() => setMode3d((m) => !m)} fullscreenTarget={wrapRef}
+          onFit={() => city && ctl?.fitBounds(city.bbox as [number, number, number, number], { padding: 20, duration: 900 })} />
 
         <div className="map-overlay map-legend legend hide-sm">
-          {Object.entries(SEV_COLORS).map(([k, c]) => <span key={k}><i style={{ background: c, borderRadius: "50%" }} />{k}</span>)}
-          <span><i style={{ background: "transparent", border: "2px solid #fbbf24", borderRadius: "50%" }} />demo data</span>
+          {Object.entries(pal.sev).map(([k, c]) => <span key={k}><i style={{ background: c, borderRadius: "50%" }} />{k}</span>)}
+          <span><i style={{ background: "transparent", border: `2px solid ${pal.demo}`, borderRadius: "50%" }} />simulated</span>
         </div>
       </div>
     </>
