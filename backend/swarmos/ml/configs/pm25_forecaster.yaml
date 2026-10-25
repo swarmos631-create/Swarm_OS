@@ -1,0 +1,14 @@
+model_name: pm25_forecaster
+description: Next-day city PM2.5 (daily mean) from the last three days, tomorrow's weather and location. Trained on real data for 50 Indian cities (Kaggle).
+task_type: aq_forecasting
+algorithm: hist_gradient_boosting_regressor
+unit: µg/m³
+used_by: [air_quality_analyst]
+dataset:
+  name: kaggle_india_aq_v1
+  generator: kaggle_india_aq
+  schema: aq_daily
+  params: {source: "kaggle:akshaykarthickms007/india-daily-weather-and-air-quality"}
+split: {method: time_based, test_days: 60, val_days: 30, seed: 42}
+hyperparams: {max_iter: 400, learning_rate: 0.05, max_leaf_nodes: 31}
+gate: {metric: mae, lower_is_better: true, margin: 0.03}
