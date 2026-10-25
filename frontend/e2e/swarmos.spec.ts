@@ -94,7 +94,10 @@ test("submit an AI task, observe execution and review proposed actions", async (
   await expect(page.getByText(/Action (executed|awaiting manual)/)).toBeVisible();
 });
 
-test("operator can record an approved manual action and its execution time", async ({ page }) => {
+test.describe("manual execution reporting", () => {
+  test.use({ serviceWorkers: "block" });
+
+  test("operator can record an approved manual action and its execution time", async ({ page }) => {
   const taskId = "manual-learning-task";
   const actionId = "manual-learning-action";
   let manuallyExecuted = false;
@@ -137,7 +140,8 @@ test("operator can record an approved manual action and its execution time", asy
     await route.fulfill({ json: action() });
   });
   await login(page, "operator@swarmos.local", "/c/bengaluru/mission-control");
-  const taskRow = page.getByRole("row").filter({ hasText: taskId });
+  // Mission Control intentionally displays only the first 12 ID characters.
+  const taskRow = page.getByRole("row").filter({ hasText: "Review approved field operation" });
   await taskRow.getByRole("button", { name: "Inspect" }).click();
   await expect(page.getByText("Record manual execution")).toBeVisible();
   await expect(page.getByText(/SwarmOS does not contact or operate field systems/)).toBeVisible();
@@ -145,6 +149,7 @@ test("operator can record an approved manual action and its execution time", asy
   await page.getByRole("button", { name: "Mark manually executed" }).click();
   await expect(page.getByText(/Operator-reported manual execution at/)).toBeVisible();
   await expect(page.getByText("Observed outcome")).toBeVisible();
+  });
 });
 
 test("integrations show honest connection states", async ({ page }) => {

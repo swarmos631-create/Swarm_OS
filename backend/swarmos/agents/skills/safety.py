@@ -165,7 +165,10 @@ def disaster_impact(ctx: AgentContext) -> AgentResult:
     return ok(f"{lead}{len(hazards)} hazard signal(s); {len(findings)} significant.", confidence=0.6, method="rules:hazard_screening",
               findings=findings, metrics={"hazards": hazards, "earthquakes_7d_500km": len(quakes), "official_alerts": len(alerts)},
               provenance=prov,
-              extra_refs=[feature_ref("earthquake", len(quakes), "live", "usgs-earthquakes")],
+              extra_refs=[
+                  feature_ref("earthquake", len(quakes), "live", "usgs-earthquakes"),
+                  *([layer_ref("earthquake", (feature for feature, _distance in quakes))] if quakes else []),
+              ],
               limitations=["Screening only — no exposure/vulnerability model (buildings, population) is applied."])
 
 

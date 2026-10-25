@@ -159,15 +159,19 @@ function RecommendationEvidence({ cityId, action, refs, agentLimitations }: {
             const isIncident = typeof record.severity === "string" && typeof record.category === "string";
             const isServiceRequest = typeof record.status === "string" && typeof record.category === "string" && !isIncident;
             const isExecution = typeof record.agent_id === "string";
+            const isDocument = typeof record.classification === "string" && typeof record.title === "string";
             const title = isMeasurement
               ? `${record.metric}: ${String(record.value)} ${String(record.unit ?? "")}`
               : isServiceRequest ? `Service request · ${String(record.category)}`
                 : isIncident ? `Incident · ${String(record.category)} · ${String(record.severity)}`
                   : isExecution ? `Agent execution · ${String(record.agent_id)}`
-                    : String(record.name ?? `${record.layer ?? "Mapped feature"} · ${record.external_id ?? record.id}`);
+                    : isDocument ? `Policy document · ${String(record.title)}`
+                      : String(record.name ?? `${record.layer ?? "Mapped feature"} · ${record.external_id ?? record.id}`);
             const sourceLabel = isServiceRequest ? "Redacted citizen/service request"
               : isIncident ? `Incident · ${String(record.status)}`
-                : isExecution ? `Execution · ${String(record.status)}` : String(record.source_name ?? record.source_id);
+                : isExecution ? `Execution · ${String(record.status)}`
+                  : isDocument ? `${String(record.classification)} · ${String(record.source ?? "Stored document")}`
+                    : String(record.source_name ?? record.source_id);
             return <li key={`${String(record.id)}-${referenceIndex}-${recordIndex}`} style={{ alignItems: "flex-start" }}>
               <div className="stack" style={{ flex: 1 }}>
                 <b className="small">{title}</b>

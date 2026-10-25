@@ -8,6 +8,7 @@ from swarmos.agents.contracts import ActionDraft, AgentResult
 from swarmos.agents.planner import FINAL_STAGE, PlanningError, build_plan
 from swarmos.agents.registry import AGENTS, REGISTRY, validate_registry
 from swarmos.agents.skills.common import naqi, naqi_category, naqi_subindex, robust_z
+from swarmos.agents.skills.safety import disaster_impact
 from swarmos.services.consensus import compare_executions
 
 REQUIRED_NAMES = [
@@ -99,6 +100,21 @@ def test_consensus_flags_shared_signal_differences_without_claiming_ground_truth
 def test_consensus_does_not_treat_missing_overlap_as_agreement():
     review = compare_executions([SimpleNamespace(agent_id="agent", status="succeeded", output={"metrics": {}, "findings": []})])
     assert review["status"] == "insufficient_overlap"
+
+
+def test_disaster_impact_references_persisted_earthquake_features():
+    feature = SimpleNamespace(id=42, layer="earthquake", provenance="live", source_id="usgs-earthquakes",
+                              properties={"magnitude": 4.2, "place": "Test region"}, observed_at=None,
+                              lat=12.0, lon=77.0)
+    ctx = SimpleNamespace(
+        spec=SimpleNamespace(config={"radius_km": 500}),
+        data=SimpleNamespace(earthquakes_near=lambda radius_km: [(feature, 125.0)], incidents=lambda days: []),
+        up=lambda agent_id: None,
+    )
+    result = disaster_impact(ctx)
+    feature_ref = next(ref for ref in result.data_refs if ref.get("layer") == "earthquake" and "feature_ids" in ref)
+    assert feature_ref["feature_ids"] == [42]
+    assert feature_ref["feature_ids_truncated"] is False
 
 
 def test_planner_selects_by_keywords_and_adds_dependencies():

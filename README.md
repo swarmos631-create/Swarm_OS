@@ -61,13 +61,11 @@ make run-api        # terminal 1 — API on :8000
 make dev-web        # terminal 2 — Vite on :5173, proxies /api to :8000
 ```
 
-### Deploying (Render API + Vercel frontend)
+### Deployment
 
-The API runs on **Render** (`render.yaml`: a Python web service in Singapore with the full `ml` extra and the
-embedded job worker; it runs `swarmos migrate` on every start). The PWA is built on **Vercel** (`vercel.json`),
-which proxies `/api/*` to the Render service, so the browser stays same-origin (no CORS, cookies unchanged). The
-database is Neon Postgres in Singapore. `SWARMOS_AUTH_DISABLED=true` turns off the sign-in screen. See
-[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#render-api--vercel-frontend).
+The operator has identified Railway as the project's sole deployment target. The repository-root Dockerfile serves
+the PWA and FastAPI backend together, with PostgreSQL for durable production state. Railway's live configuration
+and health have not been verified from this checkout. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ## Commands
 
@@ -90,7 +88,7 @@ database is Neon Postgres in Singapore. `SWARMOS_AUTH_DISABLED=true` turns off t
 * [docs/ML.md](docs/ML.md): datasets, training, evaluation, registry, local LLM setup
 * [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md): data sources, credentials, adding an adapter
 * [docs/SECURITY.md](docs/SECURITY.md): threat model, controls, production hardening
-* [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): production deployment (single node, scaled, Vercel), PostgreSQL/PostGIS, HTTPS, troubleshooting
+* [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): Railway deployment, PostgreSQL, migrations, health checks, troubleshooting
 * [docs/PLAN.md](docs/PLAN.md): implementation plan and checklist
 
 ## Licences and attribution

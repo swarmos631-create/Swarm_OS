@@ -9,6 +9,7 @@ All endpoints are under /api/v1. Requests use the existing JSON error format and
   * New recommendations include the originating agent's provenance, structured data references, limitations, confidence and demo-data flag under `payload._evidence`. These are bounded source summaries; inspect the source task for the full execution output and timestamps. Older recommendations may have been stored before this metadata was retained.
 * GET /cities/{city_id}/actions/{action_id}/evidence
   * Any authenticated user with city access. Resolves bounded measurement, mapped-feature, citizen/service-request, incident and agent-execution IDs captured by the agent. Every row is checked against the requested city (shared mapped features are limited to the city's existing 800 km relevance radius). Returns source names or status, provenance, timestamps and limitations. Citizen request text, coordinates and ward, and incident narratives and precise coordinates, are omitted. Deleted or out-of-scope IDs are reported unresolved.
+  * Retrieved policy-document references are resolved only when the current role clearance and city scope permit access. Unavailable document references omit IDs, titles and classifications. Task summaries, detailed outputs and consensus comparisons are withheld when a hidden document contributed to the result.
 * POST /cities/{city_id}/actions/{action_id}/decision
   * Auth: operator or admin; city-scoped; CSRF required. Decisions are audited and may execute an internal action or mark a manual action for follow-up.
 

@@ -23,12 +23,12 @@ The adapters already support these environment variables. No credentials are com
 
 | Variable | Purpose | Setup |
 |---|---|---|
-| SWARMOS_OGD_API_KEY | CPCB continuous air-monitoring records via data.gov.in | Create a free account/key on data.gov.in, then set this secret on the backend host (Render). The adapter syncs CPCB after registry refresh. |
+| SWARMOS_OGD_API_KEY | CPCB continuous air-monitoring records via data.gov.in | Create a free account/key on data.gov.in, then set this secret in Railway's backend service variables. The adapter syncs CPCB after registry refresh. |
 | SWARMOS_TOMTOM_API_KEY | TomTom traffic flow readings | Use only within the developer account's current quota, attribution, and storage terms. |
 | SWARMOS_MAPPLS_CLIENT_ID and SWARMOS_MAPPLS_CLIENT_SECRET, or SWARMOS_MAPPLS_API_KEY | Mappls nearby facilities | Server-side credentials only. Do not reuse a domain-restricted browser map token. |
 | IMD_API_BASE_URL | IMD data service endpoint | IMD access is by arrangement; no public keyless endpoint is assumed. |
 
-Set secrets in Render Environment, never in Git or Vercel's Vite-prefixed browser variables. Existing browser-only map key settings are for rendering that map SDK; they must never be used as backend credentials.
+Set backend secrets in Railway service variables, never in Git or Vite-prefixed browser variables. Existing browser-only map key settings are for rendering that map SDK; they must never be used as backend credentials.
 
 ## How to increase real-data coverage safely
 

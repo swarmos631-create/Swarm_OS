@@ -282,6 +282,12 @@ def impact_review(days: int = Query(30, ge=1, le=90), limit_tasks: int = Query(1
         output = execution.output or {}
         provenance = output.get("provenance", []) if isinstance(output.get("provenance", []), list) else []
         refs = output.get("data_refs", []) if isinstance(output.get("data_refs", []), list) else []
+        # Keep document clearance metadata and identifiers out of broad city analytics.
+        refs = [
+            {"type": "document", "n": ref.get("n"), "provenance": ref.get("provenance")}
+            if isinstance(ref, dict) and ref.get("type") == "document" else ref
+            for ref in refs[:20]
+        ]
         emit_metrics(output.get("metrics", {}), "", 0, execution, task, domain, provenance, refs)
         for finding in output.get("findings", []):
             if not isinstance(finding, dict) or not isinstance(finding.get("title"), str):

@@ -645,6 +645,79 @@ def test_action_evidence_resolves_redacted_city_scoped_incidents_and_requests(op
     assert execution_ref["records"][0]["summary"] == "Redacted execution summary"
 
 
+def test_action_document_evidence_is_resolved_only_with_city_and_clearance(viewer):
+    from uuid import uuid4
+
+    from swarmos.db import session_scope
+    from swarmos.models import AgentExecution, AgentTask, Document, ProposedAction
+
+    public_id, internal_id, other_city_id = uuid4().hex, uuid4().hex, uuid4().hex
+    with session_scope() as db:
+        for document_id, city_id, classification, title in (
+            (public_id, "bengaluru", "public", "Public emergency policy"),
+            (internal_id, "bengaluru", "internal", "Internal operations procedure"),
+            (other_city_id, "delhi", "public", "Other city emergency policy"),
+        ):
+            db.add(Document(id=document_id, city_id=city_id, title=title, source="test registry",
+                            classification=classification, license="Test", sha256=uuid4().hex,
+                            is_synthetic=False))
+        task = AgentTask(city_id="bengaluru", prompt="Review emergency policy", params={}, plan={},
+                         status="succeeded",
+                         result={"status": "succeeded", "summary": "RESTRICTED SUMMARY",
+                                 "answer": "RESTRICTED ANSWER", "execution_policy": "Human approval required."})
+        db.add(task)
+        db.flush()
+        db.add(AgentExecution(task_id=task.id, agent_id="policy_document_agent", status="succeeded",
+                              output={"summary": "RESTRICTED SUMMARY",
+                                      "data_refs": [{"type": "document", "document_id": internal_id,
+                                                     "title": "Internal operations procedure",
+                                                     "classification": "internal"}],
+                                      "metrics": {"passages": [{"document_id": internal_id,
+                                                                "title": "Internal operations procedure",
+                                                                "passage": "Private policy text."}]}}))
+        db.flush()
+        task_id = task.id
+        action = ProposedAction(task_id=task.id, city_id="bengaluru", agent_id="policy_document_agent", kind="manual",
+                                title="Review policy documents", rationale="Compare authorized sources.",
+                                payload={"_evidence": {"data_refs": [
+                                    {"type": "document", "document_id": public_id, "title": "Public emergency policy",
+                                     "classification": "public", "n": 1, "provenance": ["operator"]},
+                                    {"type": "document", "document_id": internal_id, "title": "Internal operations procedure",
+                                     "classification": "internal", "n": 1, "provenance": ["operator"]},
+                                    {"type": "document", "document_id": other_city_id, "title": "Other city emergency policy",
+                                     "classification": "public", "n": 1, "provenance": ["operator"]},
+                                ]}})
+        db.add(action)
+        db.flush()
+        action_id = action.id
+
+    viewer_listed = viewer.get("/api/v1/cities/bengaluru/actions", params={"limit": 50}).json()
+    listed_action = next(row for row in viewer_listed["items"] if row["id"] == action_id)
+    assert "Internal operations procedure" not in str(listed_action)
+    assert internal_id not in str(listed_action) and other_city_id not in str(listed_action)
+    viewer_task = viewer.get(f"/api/v1/cities/bengaluru/tasks/{task_id}").json()
+    assert viewer_task["result"]["summary"] == "Some results are unavailable at your document clearance."
+    assert "RESTRICTED SUMMARY" not in str(viewer_task) and "RESTRICTED ANSWER" not in str(viewer_task)
+    assert "Private policy text." not in str(viewer_task) and internal_id not in str(viewer_task)
+
+    viewer_refs = viewer.get(f"/api/v1/cities/bengaluru/actions/{action_id}/evidence").json()["references"]
+    assert viewer_refs[0]["records"][0]["title"] == "Public emergency policy"
+    assert viewer_refs[1]["records"] == []
+    assert viewer_refs[1]["unavailable_count"] == 1
+    assert internal_id not in str(viewer_refs) and other_city_id not in str(viewer_refs)
+
+    operator_login = viewer.post("/api/v1/auth/login", json={
+        "email": "operator@swarmos.local", "password": "TestPassw0rd-123",
+    })
+    assert operator_login.status_code == 200
+    viewer.headers["x-csrf-token"] = operator_login.json()["csrf_token"]
+    operator_refs = viewer.get(f"/api/v1/cities/bengaluru/actions/{action_id}/evidence").json()["references"]
+    assert operator_refs[0]["records"][0]["title"] == "Public emergency policy"
+    assert operator_refs[1]["records"][0]["title"] == "Internal operations procedure"
+    assert operator_refs[2]["records"] == []
+    assert other_city_id not in str(operator_refs)
+
+
 def test_viewer_cannot_approve_actions(viewer):
     r = viewer.post("/api/v1/cities/bengaluru/actions/doesnotexist/decision", json={"approve": True})
     assert r.status_code == 403

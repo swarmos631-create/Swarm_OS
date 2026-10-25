@@ -19,8 +19,7 @@ frontend/ (React + TS + Vite PWA)  ──HTTP /api/v1──▶  backend/swarmos
 ml/ (synthetic datasets, local copies of artifacts and reports; training configs live in backend/swarmos/ml/configs)
 ```
 
-On Vercel the same code runs as two services: the PWA as static files and the API as a Python function behind
-`/api/*` (see [DEPLOYMENT.md](DEPLOYMENT.md#vercel)).
+Railway runs the PWA and FastAPI backend from one container and one origin by default; see [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## Request path
 
@@ -74,8 +73,8 @@ return `202` with a job or task ID.
 
 `SWARMOS_JOB_MODE` selects who runs the queue (`jobs/dispatch.py`):
 
-* `worker` (default off Vercel): the embedded worker thread or `swarmos worker` claims jobs as above.
-* `inline` (default on Vercel): after enqueueing, the request schedules the job with FastAPI `BackgroundTasks`, so
+* `worker` (default): the embedded worker thread or `swarmos worker` claims jobs as above.
+* `inline` (optional): after enqueueing, the request schedules the job with FastAPI `BackgroundTasks`, so
   it runs in the same invocation after the `202` is sent (`worker.run_job_now`, which still claims the job through
   the queue, so leases and retries apply). `GET /api/internal/cron`, protected by `CRON_SECRET`, runs the scheduler
   tick and drains leftover or expired-lease jobs within a time budget.
