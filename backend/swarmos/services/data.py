@@ -109,7 +109,11 @@ class CityData:
         options = self.series(metric, **kw)
         if not options:
             return None
-        return sorted(options, key=lambda s: (PROVENANCE_RANK.get(s.provenance, 9), -len(s.points)))[0]
+        # Live wins, unless it is too short for the window (e.g. a forecast-only feed with no past hours), in which
+        # case the longest series is used so analyses keep enough history.
+        longest = max(len(o.points) for o in options)
+        usable = [o for o in options if len(o.points) >= min(6, longest) or len(o.points) * 4 >= longest] or options
+        return sorted(usable, key=lambda s: (PROVENANCE_RANK.get(s.provenance, 9), -len(s.points)))[0]
 
     def forecast_rows(self, metric: str, limit: int = 3) -> list[Measurement]:
         """Upcoming forecast rows from a single source, live sources first (never a mix of live and simulated)."""
