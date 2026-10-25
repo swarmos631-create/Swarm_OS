@@ -46,7 +46,7 @@ const STATUS_CLASS: Record<string, string> = {
   partial: "b-demo", degraded: "b-demo", awaiting_manual: "b-demo", awaiting_credentials: "b-demo", awaiting_access: "b-demo", stale: "b-stale", candidate: "b-records",
   demo: "b-demo", internal: "b-records", open: "b-stale",
   failed: "b-error", failing: "b-error", timed_out: "b-error", rejected: "b-unavailable", cancelled: "b-unavailable", unavailable: "b-unavailable",
-  disabled: "b-unavailable", idle: "b-unavailable", never: "b-unavailable", archived: "b-unavailable",
+  disabled: "b-unavailable", on_demand: "b-unavailable", idle: "b-unavailable", never: "b-unavailable", archived: "b-unavailable",
 };
 
 export function StatusBadge({ s, label }: { s: string; label?: string }) {
