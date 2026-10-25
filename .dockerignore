@@ -1,0 +1,16 @@
+.git
+**/node_modules
+**/.venv
+**/__pycache__
+**/*.pyc
+frontend/dist
+frontend/test-results
+frontend/playwright-report
+var
+.env
+*.db
+ml/artifacts/*
+ml/reports/*
+ml/datasets/raw/*
+ml/datasets/processed/*
+ml/datasets/synthetic/kaggle_india_aq_v1
