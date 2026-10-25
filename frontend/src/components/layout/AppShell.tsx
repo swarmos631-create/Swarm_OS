@@ -17,7 +17,7 @@ const NAV: { to: string; label: string; icon: IconName; color: string; section?:
   { to: "", label: "Command Center", color: "var(--violet)", icon: "command", section: "Operate" },
   { to: "map", label: "Operations Map", color: "var(--cyan)", icon: "map" },
   { to: "incidents", label: "Incidents", color: "var(--red)", icon: "incidents" },
-  { to: "workspace", label: "AI Workspace", color: "var(--pink)", icon: "workspace", section: "Intelligence" },
+  { to: "workspace", label: "AI Assistant", color: "var(--pink)", icon: "workspace", section: "Intelligence" },
   { to: "agents", label: "Agent Fleet", color: "var(--orange)", icon: "agents" },
   { to: "analytics", label: "Analytics", color: "var(--blue)", icon: "analytics" },
   { to: "integrations", label: "Data Integrations", color: "var(--teal)", icon: "integrations", section: "Platform" },
