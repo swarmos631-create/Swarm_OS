@@ -48,15 +48,9 @@ test("city context persists across navigation and deep links", async ({ page }) 
 });
 
 test("operations map renders layers and shows feature details", async ({ page }) => {
-  const mapErrors: string[] = [];
-  page.on("console", (m) => m.type() === "error" && /worker|webgl|style/i.test(m.text()) && mapErrors.push(m.text()));
-  page.on("pageerror", (e) => mapErrors.push(e.message));
+  const pageErrors: string[] = [];
+  page.on("pageerror", (e) => pageErrors.push(e.message));
   await login(page, "admin@swarmos.local", "/c/bengaluru/map");
-  const glUnavailable = page.getByText("3D graphics unavailable");
-  if (await glUnavailable.isVisible().catch(() => false)) {
-    test.info().annotations.push({ type: "note", description: "WebGL unavailable in this browser; fallback state verified" });
-    return;
-  }
   await expect(page.getByTestId("ops-map")).toBeVisible();
   await expect(page.getByText("Layers", { exact: true })).toBeVisible();
   await expect(page.getByText("Traffic corridors")).toBeVisible();
@@ -67,8 +61,9 @@ test("operations map renders layers and shows feature details", async ({ page })
   await expect(detail).toContainText("Demo");
   await page.getByTestId("map-3d").click();
   await expect(page.getByText(/illustrative — not a survey-grade digital twin/)).toBeVisible();
-  await expect(page.locator(".maplibregl-canvas")).toBeVisible();
-  expect(mapErrors, "MapLibre must start its worker and render without errors").toEqual([]);
+  // MapmyIndia is the only base map; without VITE_MAPPLS_KEY the page says so and keeps the layers usable.
+  if (!process.env.VITE_MAPPLS_KEY) await expect(page.getByText(/MapmyIndia key is not configured/)).toBeVisible();
+  expect(pageErrors).toEqual([]);
 });
 
 test("50-agent registry is inspectable", async ({ page }) => {
