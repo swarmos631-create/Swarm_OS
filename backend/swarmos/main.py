@@ -84,6 +84,36 @@ def _preload_models() -> None:
     threading.Thread(target=run, name="model-preload", daemon=True).start()
 
 
+def tune_database() -> None:
+    """Cap PostgreSQL's write-ahead log on the app's own database and report its size.
+
+    Postgres lets WAL grow to 1 GB before forcing a checkpoint; on a 500 MB volume a burst of writes (seeding,
+    training) fills the disk. Needs a superuser connection (Railway's Postgres template gives one); otherwise skipped.
+    """
+    settings = get_settings()
+    engine = get_engine()
+    if engine.dialect.name != "postgresql":
+        return
+    try:
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+            if settings.db_max_wal_size and conn.execute(text("SELECT rolsuper FROM pg_roles WHERE rolname = current_user")).scalar():
+                current = conn.execute(text("SHOW max_wal_size")).scalar()
+                if current != settings.db_max_wal_size:
+                    conn.execute(text(f"ALTER SYSTEM SET max_wal_size = '{settings.db_max_wal_size}'"))
+                    conn.execute(text("ALTER SYSTEM SET min_wal_size = '32MB'"))
+                    conn.execute(text("SELECT pg_reload_conf()"))
+                conn.execute(text("CHECKPOINT"))  # recycle WAL segments now
+            db_mb = conn.execute(text("SELECT pg_database_size(current_database()) / 1048576")).scalar()
+            try:
+                wal_mb = conn.execute(text("SELECT (coalesce(sum(size), 0) / 1048576)::int FROM pg_ls_waldir()")).scalar()
+            except Exception:
+                wal_mb = None
+            log.info("database_tuned", extra={"database_mb": db_mb, "wal_mb": wal_mb,
+                                               "max_wal_size": conn.execute(text("SHOW max_wal_size")).scalar()})
+    except Exception as exc:  # pragma: no cover - depends on the database's permissions
+        log.warning("database_tuning_skipped", extra={"error_type": type(exc).__name__, "error": str(exc)[:200]})
+
+
 def _prebuild_cities(stop) -> None:  # type: ignore[no-untyped-def]
     """Build every city's simulated data in the background so switching to a new city is instant."""
     import threading
@@ -93,7 +123,7 @@ def _prebuild_cities(stop) -> None:  # type: ignore[no-untyped-def]
             from swarmos.demo.seed import prebuild_cities
 
             time.sleep(20)  # let startup work (model training, first syncs) get going first
-            prebuild_cities(get_settings(), stop)
+            prebuild_cities(get_settings(), stop, pause_s=2.0)
         except Exception as exc:  # pragma: no cover - never break the API
             log.warning("city_prebuild_skipped", extra={"error_type": type(exc).__name__})
 
@@ -119,6 +149,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     stop_prebuild = threading.Event()
     if settings.worker_embedded and settings.job_mode == "worker" and settings.env != "test":
         from swarmos.jobs.worker import EmbeddedWorker
+
+        tune_database()
 
         worker = EmbeddedWorker()
         worker.start()
