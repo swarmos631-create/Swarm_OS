@@ -26,7 +26,18 @@ from swarmos.config import get_settings
 def _alembic_cfg():  # type: ignore[no-untyped-def]
     from alembic.config import Config
 
-    return Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+    configured = os.environ.get("SWARMOS_ALEMBIC_CONFIG")
+    candidates = [Path(configured)] if configured else []
+    candidates.extend((
+        Path(__file__).resolve().parents[1] / "alembic.ini",
+        Path.cwd() / "backend" / "alembic.ini",
+        Path.cwd() / "alembic.ini",
+    ))
+    for path in candidates:
+        if path.is_file():
+            return Config(str(path))
+    searched = ", ".join(str(path) for path in candidates)
+    raise FileNotFoundError(f"Alembic configuration not found; set SWARMOS_ALEMBIC_CONFIG. Searched: {searched}")
 
 
 def cmd_migrate(_: argparse.Namespace) -> None:
