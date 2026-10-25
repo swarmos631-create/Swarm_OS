@@ -62,7 +62,7 @@ def traffic_flow(ctx: AgentContext) -> AgentResult:
 
 
 def congestion_forecast(ctx: AgentContext) -> AgentResult:
-    corridors = ctx.data.entities("traffic", hours_back=24 * 15)
+    corridors = ctx.data.entities("traffic", hours_back=24 * 15, live_first=False)
     if not corridors:
         return unavailable(["traffic speed history"], "No traffic history to forecast from.")
     # City-level mean speed per hour across corridors
