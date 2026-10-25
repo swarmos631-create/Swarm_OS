@@ -123,7 +123,7 @@ export function AppShell() {
           ))}
         </nav>
         <div className="sidebar-foot">
-          <NavLink to={`/c/${cityId}/system`} className="nav-link" title="System status" style={{ ["--c" as string]: "var(--text-2)" }}><span className="nav-ico"><Icon name="settings" /></span><span className="nav-label">Settings</span></NavLink>
+          <NavLink to={`/c/${cityId}/settings`} className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`} title="Settings — colour themes and appearance" style={{ ["--c" as string]: "var(--accent)" }}><span className="nav-ico"><Icon name="settings" /></span><span className="nav-label">Settings</span></NavLink>
           <a className="nav-link" style={{ ["--c" as string]: "var(--text-2)" }} href="/api/health/ready" target="_blank" rel="noreferrer" title="API health"><span className="nav-ico"><Icon name="help" /></span><span className="nav-label">API health</span></a>
           {!me?.auth_disabled && <button className="nav-link" style={{ ["--c" as string]: "var(--text-2)" }} onClick={() => void logout()} title="Sign out"><span className="nav-ico"><Icon name="logout" /></span><span className="nav-label">Sign out</span></button>}
         </div>
@@ -137,6 +137,7 @@ export function AppShell() {
           <CitySelector />
           <span className={`pill hide-sm ${online ? "" : "warn"}`} aria-live="polite"><span className={`pulse ${online ? "" : "off"}`} />{online ? "Online" : "Offline"}</span>
           <ThemeSwitch />
+          <NavLink to={`/c/${cityId}/settings`} className="round-btn" aria-label="Colour themes" title="Colour themes"><Icon name="palette" /></NavLink>
           <PwaControls />
           <Notifications cityId={cityId} />
           <div className="user-chip hide-sm" title={me?.email}>
