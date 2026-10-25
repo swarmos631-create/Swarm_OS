@@ -8,6 +8,7 @@ from swarmos.agents.skills.common import (
     age_hours,
     feature_ref,
     finding,
+    layer_ref,
     ok,
     records_ref,
     unavailable,
@@ -101,9 +102,9 @@ def resource_coordinator(ctx: AgentContext) -> AgentResult:
         return ok("No high-severity geolocated incidents need resource coordination.", confidence=0.75,
                   method="spatial:nearest_facility", metrics={"assignments": []}, provenance=set(triage.provenance))
     if not facilities:
-        return AgentResult(status="degraded", summary="Incidents need coordination but no facility locations are synchronised (run OSM sync).",
+        return AgentResult(status="degraded", summary="Incidents need coordination but no facility locations are synchronised (run the MapmyIndia or OpenStreetMap sync).",
                            confidence=0.3, method="none", provenance=triage.provenance,
-                           missing=["OpenStreetMap hospital / fire station / police locations"],
+                           missing=["hospital / fire station / police locations (MapmyIndia or OpenStreetMap)"],
                            metrics={"assignments": []})
     assignments, actions = [], []
     need = {"fire": ["fire_station", "hospital"], "medical": ["hospital"], "structural": ["fire_station", "hospital", "police"],
@@ -125,7 +126,7 @@ def resource_coordinator(ctx: AgentContext) -> AgentResult:
     counts = {layer: sum(1 for f in facilities if f.layer == layer) for layer in ("hospital", "fire_station", "police")}
     return ok(f"Nearest-facility plans prepared for {len(assignments)} high-severity incident(s).", confidence=0.6,
               method="spatial:nearest_facility_haversine", actions=actions, metrics={"assignments": assignments, "facility_counts": counts},
-              extra_refs=[feature_ref(k, v, "live", "osm-overpass") for k, v in counts.items()],
+              extra_refs=[layer_ref(k, facilities) for k in counts],
               provenance=set(triage.provenance) | {f.provenance for f in facilities},
               limitations=["Straight-line distance, not road travel time; facility availability/capacity unknown."])
 
