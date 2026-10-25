@@ -22,7 +22,7 @@
         },
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; img-src 'self' data: blob: https://tiles.openfreemap.org; connect-src 'self' https://tiles.openfreemap.org; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; frame-ancestors 'none'"
+          "value": "default-src 'self'; script-src 'self' https://sdk.mappls.com https://apis.mappls.com https://*.mappls.com; style-src 'self' 'unsafe-inline' https://*.mappls.com; img-src 'self' data: blob: https://tiles.openfreemap.org https://*.mappls.com https://*.mapmyindia.com; connect-src 'self' https://tiles.openfreemap.org https://*.mappls.com https://*.mapmyindia.com; font-src 'self' data: https://*.mappls.com; worker-src 'self' blob:; child-src blob:; frame-ancestors 'none'"
         }
       ]
     },
