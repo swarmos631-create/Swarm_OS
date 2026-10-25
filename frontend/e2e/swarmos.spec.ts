@@ -188,7 +188,7 @@ test("SakhiRoute compares real-route response context and opens mapped evidence"
           mapped_feature_evidence: [{ source_id: "osm-overpass", external_id: "node/123456", name: "Central Clinic",
             layer: "clinic", provenance: "live", distance_to_sampled_route_m: 86, wheelchair: "yes",
             observed_at: null, fetched_at: "2026-10-25T10:00:00Z" }],
-          mapped_feature_evidence_truncated: false,
+          mapped_feature_evidence_truncated: true, context_truncated: true,
           provenance: ["live"],
         },
       }],
@@ -207,8 +207,9 @@ test("SakhiRoute compares real-route response context and opens mapped evidence"
   const routeCard = page.locator("section.panel.panel-body").filter({ hasText: "Router's first choice" });
   await expect(routeCard).toContainText("Nearby mapped wheelchair tags:");
   await expect(routeCard).toContainText("yes 1");
-  await page.getByText("Inspect mapped facility evidence (1)").click();
+  await page.getByText("Inspect mapped facility evidence (1+)").click();
   await expect(page.getByText("Central Clinic")).toBeVisible();
   await expect(page.getByRole("link", { name: "Inspect OpenStreetMap feature ↗" })).toHaveAttribute("href", "https://www.openstreetmap.org/node/123456");
+  await expect(routeCard).toContainText("Counts and evidence are incomplete lower bounds.");
   await expect(page.getByText(/Street lighting is not measured/)).toBeVisible();
 });

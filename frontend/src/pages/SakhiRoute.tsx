@@ -24,6 +24,7 @@ interface RouteOption {
     wheelchair_features_near_route?: number;
     mapped_feature_evidence?: MappedFeatureEvidence[];
     mapped_feature_evidence_truncated?: boolean;
+    context_truncated?: boolean;
     provenance: string[];
   };
 }
@@ -245,7 +246,8 @@ function RouteCard({ route, index }: { route: RouteOption; index: number }) {
               : <code className="xs">{item.external_id}</code>}
           </li>)}
         </ul> : <p className="xs faint">No mapped facility or transit records were found within the context radius.</p>}
-        {route.context.mapped_feature_evidence_truncated && <p className="xs faint">Evidence is capped at 25 nearest records; the counts above include all matching records in the context area.</p>}
+        {route.context.mapped_feature_evidence_truncated && <p className="xs faint">Evidence is capped at 25 nearest records; {route.context.context_truncated ? "the candidate scan also hit its cap, so counts and evidence may be incomplete." : "the counts above include all matching records in the context area."}</p>}
+        {route.context.context_truncated && <p className="xs faint">The route context scan hit its record cap. Counts and evidence are incomplete lower bounds.</p>}
       </details>
       <div className="row wrap">{route.context.provenance.map((item) => <ProvenanceBadge key={item} p={item} />)}</div>
       <span className="xs faint">Context radius is measured from sampled route geometry; coverage depends on mapped records.</span>
