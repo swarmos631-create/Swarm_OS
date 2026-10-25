@@ -42,20 +42,6 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         runtimeCaching: [
           { urlPattern: ({ url }) => url.pathname.startsWith("/api/"), handler: "NetworkOnly" },
-          {
-            urlPattern: ({ url }) => url.hostname === "tiles.openfreemap.org" && /\/(styles|sprites|fonts)\//.test(url.pathname),
-            handler: "StaleWhileRevalidate",
-            options: { cacheName: "map-style-v1", expiration: { maxEntries: 200, maxAgeSeconds: 7 * 24 * 3600 } },
-          },
-          {
-            urlPattern: ({ url }) => url.hostname === "tiles.openfreemap.org",
-            handler: "CacheFirst",
-            options: {
-              cacheName: "map-tiles-v1",
-              expiration: { maxEntries: 600, maxAgeSeconds: 7 * 24 * 3600 },
-              cacheableResponse: { statuses: [200] },
-            },
-          },
         ],
       },
     }),
