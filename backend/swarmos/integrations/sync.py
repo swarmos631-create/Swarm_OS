@@ -378,9 +378,11 @@ async def run_batch_sync(source_id: str, *, force: bool = False, client: httpx.A
 
 
 def prune_measurements(retention_days: int) -> int:
-    """Delete live and simulated readings older than the retention window (keeps the free database small)."""
+    """Delete live readings older than the retention window (keeps the free database small). Simulated series are
+    left alone: they are regenerated as a whole by the simulator and include multi-year history (e.g. land cover)."""
     with session_scope() as db:
-        res = db.execute(delete(Measurement).where(Measurement.observed_at < utcnow() - timedelta(days=retention_days)))
+        res = db.execute(delete(Measurement).where(Measurement.observed_at < utcnow() - timedelta(days=retention_days),
+                                                   Measurement.provenance.not_in(("demo", "synthetic"))))
         return int(getattr(res, "rowcount", 0) or 0)
 
 
