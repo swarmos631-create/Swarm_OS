@@ -79,6 +79,8 @@ class Settings(BaseSettings):
     demo_mode: bool = True
     # Generate simulated data for every city on first visit (not only the pilot cities). Needs demo_mode.
     simulate_all_cities: bool = True
+    # Long-running servers build every city's simulated data in the background after startup (no first-visit wait).
+    prebuild_cities: bool = True
     # Train any configured ML model that has no promoted version when the API starts (needs the `ml` extra).
     auto_train_models: bool = True
     demo_pilot_cities: CsvList = Field(default_factory=lambda: ["bengaluru", "mumbai", "delhi"])
@@ -98,6 +100,7 @@ class Settings(BaseSettings):
             "https://overpass.private.coffee/api/interpreter",
         ]
     )
+    openaq_api_key: str | None = None  # OpenAQ v3 key — CPCB/state station data (reachable from any country)
     ogd_api_key: str | None = None  # data.gov.in key — required for CPCB station feed
     ogd_cpcb_resource_id: str = "3b01bcb8-0b14-4abf-b6f2-c1bfd384ba69"
     imd_api_base_url: str | None = None  # IMD access is by arrangement; unset == unavailable
