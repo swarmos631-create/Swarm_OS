@@ -16,6 +16,7 @@ import json
 import logging
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Any
 
@@ -23,6 +24,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
 
+from swarmos.agents.chat import compose_answer, primary_agents
 from swarmos.agents.contracts import AgentContext, AgentResult, Cancelled, TransientAgentError
 from swarmos.agents.registry import REGISTRY
 from swarmos.ai.runtime import ModelRuntime, get_runtime
@@ -72,6 +74,21 @@ def _run_skill_sync(task_id: str, agent_id: str, city_id: str, prompt: str, para
         if missing:
             raise ValueError(f"Output contract violation: missing metrics {missing}")
     return result
+
+
+_pool: ThreadPoolExecutor | None = None
+_pool_lock = threading.Lock()
+
+
+def _agent_pool() -> ThreadPoolExecutor:
+    """Threads reserved for agent skills. asyncio's default executor is small on 1-CPU hosts and is shared with
+    model training, so a skill could wait there for a thread while its timeout was already running. Twice the
+    agent concurrency leaves room for threads still finishing after a timeout."""
+    global _pool
+    with _pool_lock:
+        if _pool is None:
+            _pool = ThreadPoolExecutor(max_workers=get_settings().agent_max_concurrency * 2, thread_name_prefix="agent")
+        return _pool
 
 
 class Orchestrator:
@@ -176,8 +193,9 @@ class Orchestrator:
             attempts = attempt + 1
             try:
                 result = await asyncio.wait_for(
-                    asyncio.to_thread(_run_skill_sync, task_id, agent_id, city_id, prompt, params, upstream, now,
-                                      clearance, self.runtime, cancel_event),
+                    asyncio.get_running_loop().run_in_executor(
+                        _agent_pool(), _run_skill_sync, task_id, agent_id, city_id, prompt, params, upstream, now,
+                        clearance, self.runtime, cancel_event),
                     timeout=timeout,
                 )
                 status, error = RESULT_TO_EXEC[result.status], None
@@ -233,10 +251,16 @@ class Orchestrator:
 
             action_ids = [] if cancelled else self._persist_actions(db, task, results, statuses)
             ok_results = {a: r for a, r in results.items() if statuses.get(a) in ("succeeded", "degraded")}
-            summary_src = ok_results.get("city_situation_summarizer") or ok_results.get("public_safety_situation_summarizer")
-            primary = [a for a in agents if a not in ("city_operations_planning_agent", "compliance_checklist_agent")]
+            asked = primary_agents(task.plan)
+            # A roll-up summary leads only when the question asked for an overview; otherwise lead with the agents
+            # that matched the question (e.g. the weather agent for "what is the weather today?").
+            summary_src = next((ok_results[a] for a in ("city_situation_summarizer", "public_safety_situation_summarizer")
+                                if a in ok_results and a in asked), None)
+            primary = [a for a in asked if a in ok_results] or [
+                a for a in agents if a not in ("city_operations_planning_agent", "compliance_checklist_agent")]
             summary = summary_src.summary if summary_src else " ".join(
                 ok_results[a].summary for a in primary if a in ok_results)[:3000] or "No agent produced a usable result."
+            answer, suggestions = compose_answer(task.plan, results, statuses, task.prompt)
             confs = [r.confidence for r in ok_results.values() if r.confidence is not None]
             sev_rank = {"critical": 4, "high": 3, "moderate": 2, "low": 1, "info": 0}
             # Roll-up agents repeat their inputs' findings; keep each finding once, attributed to its originating agent.
@@ -257,6 +281,8 @@ class Orchestrator:
             task.result = {
                 "status": final,
                 "summary": summary,
+                "answer": answer,
+                "suggestions": suggestions,
                 "counts": counts,
                 "confidence": round(sum(confs) / len(confs), 2) if confs else None,
                 "provenance": sorted(set().union(*(set(r.provenance) for r in ok_results.values()))) if ok_results else [],
