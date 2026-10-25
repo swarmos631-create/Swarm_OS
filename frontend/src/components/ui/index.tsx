@@ -22,7 +22,7 @@ export function Panel({ title, icon, actions, children, className = "", flush = 
 }
 
 const PROV_LABEL: Record<string, string> = {
-  live: "Live", cached: "Cached", demo: "Demo", synthetic: "Synthetic", operator: "Operator", derived: "Derived", records: "Records", mixed: "Mixed",
+  live: "Live", cached: "Cached", demo: "Simulated", synthetic: "Synthetic", operator: "Operator", derived: "Derived", records: "Records", mixed: "Mixed",
 };
 
 /** Every value shown in SwarmOS carries a provenance badge; demo/synthetic is always visually distinct. */
@@ -30,7 +30,7 @@ export function ProvenanceBadge({ p, title }: { p: Provenance | undefined | null
   if (!p) return null;
   const cls = p === "synthetic" ? "b-demo" : p === "mixed" ? "b-records" : `b-${p}`;
   const tip = title ?? ({
-    live: "Fetched from a connected external source", demo: "SYNTHETIC demonstration data — not real", synthetic: "SYNTHETIC data — not real",
+    live: "Fetched from a connected external source", demo: "Simulated — generated from climate normals and city size, not a live reading", synthetic: "SYNTHETIC data — not real",
     operator: "Entered by an authorised operator", derived: "Computed by SwarmOS from other data", cached: "Previously synchronised data",
   } as Record<string, string>)[p];
   return <span className={`badge ${cls}`} title={tip}><span className="dot" />{PROV_LABEL[p] ?? p}</span>;
@@ -50,7 +50,7 @@ const STATUS_CLASS: Record<string, string> = {
 };
 
 export function StatusBadge({ s, label }: { s: string; label?: string }) {
-  return <span className={`badge ${STATUS_CLASS[s] ?? "b-unavailable"}`}><span className="dot" />{label ?? titleCase(s)}</span>;
+  return <span className={`badge ${STATUS_CLASS[s] ?? "b-unavailable"}`}><span className="dot" />{label ?? (s === "demo" ? "Simulated" : titleCase(s))}</span>;
 }
 
 export function FreshnessBadge({ f }: { f: Freshness | null | undefined }) {
@@ -155,7 +155,7 @@ export function Drawer({ title, onClose, children }: { title: ReactNode; onClose
   }, [onClose]);
   return (
     <>
-      <div className="overlay" style={{ background: "rgba(2,4,10,0.4)", zIndex: 44 }} onClick={onClose} />
+      <div className="overlay light" style={{ zIndex: 44 }} onClick={onClose} />
       <aside className="drawer" role="dialog" aria-modal="true" aria-label={typeof title === "string" ? title : "Details"}>
         <header className="panel-head" style={{ position: "sticky", top: 0, background: "var(--surface-solid)", zIndex: 1 }}>
           <h2>{title}</h2>
