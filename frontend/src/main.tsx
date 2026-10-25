@@ -15,6 +15,7 @@ import { App } from "./App";
 import { initServiceWorker } from "./components/layout/PwaControls";
 import { rememberedCity } from "./state/city";
 import { SessionProvider } from "./state/session";
+import { ThemeProvider } from "./state/theme";
 import { ToastProvider } from "./state/ui";
 
 const queryClient = new QueryClient({
@@ -36,6 +37,7 @@ if (bootCity) void queryClient.prefetchQuery(dashboardQuery(decodeURIComponent(b
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
+    <ThemeProvider>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <ToastProvider>
@@ -45,6 +47,7 @@ createRoot(document.getElementById("root")!).render(
         </ToastProvider>
       </BrowserRouter>
     </QueryClientProvider>
+    </ThemeProvider>
   </StrictMode>,
 );
 
