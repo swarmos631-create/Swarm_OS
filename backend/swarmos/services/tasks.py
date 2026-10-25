@@ -29,8 +29,9 @@ from swarmos.models import (
 
 def preview_plan(principal: Principal, prompt: str, agent_ids: list[str] | None, domains: list[str] | None) -> dict[str, Any]:
     try:
-        plan = build_plan(prompt, role=principal.role, agent_ids=agent_ids, domains=domains,
-                          max_agents=get_settings().task_max_agents)
+        # A free-text request is capped; an explicit agent selection runs everything that was picked.
+        cap = max(get_settings().task_max_agents, len(agent_ids) + 8) if agent_ids else get_settings().task_max_agents
+        plan = build_plan(prompt, role=principal.role, agent_ids=agent_ids, domains=domains, max_agents=min(cap, 60))
     except PlanningError as exc:
         raise bad_request(str(exc)) from exc
     return plan.as_dict()
