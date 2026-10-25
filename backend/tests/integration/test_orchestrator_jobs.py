@@ -121,3 +121,19 @@ def test_queue_dedupe_claim_retry_and_reap():
     with session_scope() as db:
         assert queue.reap_expired(db) >= 1
         assert db.get(Job, job_id).status == "queued"
+
+
+def test_prebuild_cities_builds_only_cities_without_data():
+    from sqlalchemy import func, select
+
+    from swarmos.config import get_settings
+    from swarmos.db import session_scope
+    from swarmos.demo.seed import DEMO, prebuild_cities
+    from swarmos.models import Measurement
+
+    settings = get_settings().model_copy(update={"simulate_all_cities": True})
+    assert prebuild_cities(settings, pause_s=0, city_ids=["kochi", "bengaluru"]) == 1  # bengaluru is already seeded
+    with session_scope() as db:
+        n = db.scalar(select(func.count(Measurement.id)).where(Measurement.city_id == "kochi", Measurement.source_id == DEMO))
+    assert n and n > 1000
+    assert prebuild_cities(settings, pause_s=0, city_ids=["kochi"]) == 0  # idempotent

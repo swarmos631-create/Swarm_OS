@@ -3,7 +3,7 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import type { MapLike, MapTheme } from "./mapkit";
 
-/** MapmyIndia (Mappls) static key for the Web SDK — the only base map. Set VITE_MAPPLS_KEY in Vercel. */
+/** MapmyIndia (Mappls) static key for the Web SDK — the only base map. Set VITE_MAPPLS_KEY in the hosting variables (build-time). */
 export const MAPPLS_KEY = String(import.meta.env.VITE_MAPPLS_KEY ?? "").trim();
 export const hasMappls = MAPPLS_KEY.length > 0;
 
@@ -16,7 +16,7 @@ let searchLoading: Promise<any> | null = null;
 
 /** Load the Mappls Web SDK v3 once. Rejects after 15 s or on a script error (bad key, domain not whitelisted, offline). */
 export function loadMappls(): Promise<any> {
-  if (!hasMappls) return Promise.reject(new Error("MapmyIndia key is not configured — set VITE_MAPPLS_KEY in Vercel and redeploy"));
+  if (!hasMappls) return Promise.reject(new Error("MapmyIndia key is not configured — set VITE_MAPPLS_KEY in the Railway variables and redeploy"));
   if (window.mappls?.Map) return Promise.resolve(window.mappls);
   if (loading) return loading;
   loading = new Promise((resolve, reject) => {
@@ -158,17 +158,23 @@ export function MapplsCanvas({ center, zoom, points, lines = EMPTY_LINES, mode3d
   const [loaded, setLoaded] = useState(false);
   const cbs = useRef({ onSelect, onReady, onFail, onMapClick });
   cbs.current = { onSelect, onReady, onFail, onMapClick };
+  // The latest view, read when the map is (re)built so a theme change keeps the current city and zoom.
+  const view = useRef({ center, zoom, mode3d });
+  view.current = { center, zoom, mode3d };
+  const shown = useRef<{ lat: number; lon: number } | null>(null); // the centre the map is showing
 
   useEffect(() => {
     let dead = false;
     loadMappls()
       .then((mappls) => {
         if (dead) return;
+        const v = view.current;
         const m = new mappls.Map(id, {
-          center: { lat: center.lat, lng: center.lon }, zoom, zoomControl: false, location: false, geolocation: false,
-          fullscreenControl: false, traffic: false, tilt: mode3d ? 60 : 0, backgroundColor: theme === "dark" ? "#0e1124" : "#e9ecf5",
+          center: { lat: v.center.lat, lng: v.center.lon }, zoom: v.zoom, zoomControl: false, location: false, geolocation: false,
+          fullscreenControl: false, traffic: false, tilt: v.mode3d ? 60 : 0, backgroundColor: theme === "dark" ? "#0e1124" : "#e9ecf5",
         });
         mapRef.current = m;
+        shown.current = { lat: v.center.lat, lon: v.center.lon };
         const ready = () => {
           if (dead) return;
           call(mappls, "setStyle", theme === "dark" ? "standard-night" : "standard-day");
@@ -191,29 +197,57 @@ export function MapplsCanvas({ center, zoom, points, lines = EMPTY_LINES, mode3d
       mapRef.current = null;
       cbs.current.onReady?.(null);
     };
-    // The map is rebuilt when the city or theme changes; tilt and markers are updated in place below.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, center.lat, center.lon, theme]);
+    // Built once (and again only when the theme changes). A city switch moves the existing map instead of
+    // rebuilding it — re-creating a Mappls map re-downloads its style, sprites and tiles, which took seconds.
+  }, [id, theme]);
 
+  // City switch: fly the loaded map to the new centre (also covers a switch made while the map was still loading).
+  useEffect(() => {
+    const m = mapRef.current;
+    const at = shown.current;
+    if (!m || !loaded || (at && at.lat === center.lat && at.lon === center.lon)) return;
+    shown.current = { lat: center.lat, lon: center.lon };
+    const z = view.current.mode3d ? Math.max(16.5, zoom) : zoom;
+    if (typeof m.flyTo === "function") call(m, "flyTo", { center: [center.lon, center.lat], zoom: z, duration: 1200, essential: true });
+    else {
+      call(m, "setCenter", { lat: center.lat, lng: center.lon });
+      call(m, "setZoom", z);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [center.lat, center.lon, loaded]);
+
+  // Markers: drawn in small batches per animation frame so a city with hundreds of points never freezes the page.
   useEffect(() => {
     const m = mapRef.current;
     const mappls = window.mappls;
     if (!m || !mappls || !loaded) return;
+    let cancelled = false;
     markers.current.forEach((mk) => call(mk, "remove"));
-    markers.current = points.slice(0, 900).map((p) => {
-      const d = p.size * 2;
-      const html = `<div class="mpl-dot" style="width:${d}px;height:${d}px;background:${p.color};box-shadow:0 0 0 2px ${p.ring ?? "rgba(255,255,255,.85)"},0 0 12px ${p.color}"></div>`;
-      try {
-        const mk = new mappls.Marker({
-          map: m, position: { lat: p.lat, lng: p.lon }, html, width: d, height: d, fitbounds: false,
-          popupHtml: `<b>${esc(p.title)}</b>${p.subtitle ? `<br><span>${esc(p.subtitle)}</span>` : ""}`,
-        });
-        call(mk, "addListener", "click", () => cbs.current.onSelect?.(p));
-        return mk;
-      } catch {
-        return null;
+    markers.current = [];
+    const todo = points.slice(0, 900);
+    let i = 0;
+    const step = () => {
+      if (cancelled) return;
+      const end = Math.min(todo.length, i + 120);
+      for (; i < end; i++) {
+        const p = todo[i];
+        const d = p.size * 2;
+        const html = `<div class="mpl-dot" style="width:${d}px;height:${d}px;background:${p.color};box-shadow:0 0 0 2px ${p.ring ?? "rgba(255,255,255,.85)"},0 0 12px ${p.color}"></div>`;
+        try {
+          const mk = new mappls.Marker({
+            map: m, position: { lat: p.lat, lng: p.lon }, html, width: d, height: d, fitbounds: false,
+            popupHtml: `<b>${esc(p.title)}</b>${p.subtitle ? `<br><span>${esc(p.subtitle)}</span>` : ""}`,
+          });
+          call(mk, "addListener", "click", () => cbs.current.onSelect?.(p));
+          markers.current.push(mk);
+        } catch {
+          /* skip a point the SDK rejects */
+        }
       }
-    }).filter(Boolean);
+      if (i < todo.length) requestAnimationFrame(step);
+    };
+    step();
+    return () => { cancelled = true; };
   }, [points, loaded]);
 
   useEffect(() => {

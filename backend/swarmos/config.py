@@ -79,6 +79,14 @@ class Settings(BaseSettings):
     demo_mode: bool = True
     # Generate simulated data for every city on first visit (not only the pilot cities). Needs demo_mode.
     simulate_all_cities: bool = True
+    # Long-running servers build every city's simulated data in the background after startup (no first-visit wait).
+    prebuild_cities: bool = True
+    # Stop pre-building once the database reaches this size (MB); other cities are then built on their first visit.
+    # Railway's free volume is 500 MB, so keep room for live data, models and write-ahead log.
+    prebuild_db_budget_mb: int = Field(default=120, ge=50)
+    # PostgreSQL write-ahead-log cap applied at startup when the app's database user may change it (own database
+    # only). Postgres defaults to 1 GB, which can fill a small volume during bulk writes. Empty = leave as is.
+    db_max_wal_size: str | None = "64MB"
     # Train any configured ML model that has no promoted version when the API starts (needs the `ml` extra).
     auto_train_models: bool = True
     demo_pilot_cities: CsvList = Field(default_factory=lambda: ["bengaluru", "mumbai", "delhi"])
@@ -86,7 +94,9 @@ class Settings(BaseSettings):
     http_user_agent: str = "SwarmOS/0.1 (+https://github.com/swarmos631-create/Swarm_OS)"
     sync_enabled: bool = True
     sync_interval_minutes: int = Field(default=30, ge=5)
-    measurement_retention_days: int = Field(default=10, ge=2, le=365)
+    # Live readings older than this are pruned daily (and at startup). Hourly feeds for ~90 cities are the largest
+    # table, so keep it short on small databases; simulated history is unaffected.
+    measurement_retention_days: int = Field(default=3, ge=2, le=365)
     sync_cities: CsvList = Field(default_factory=lambda: ["bengaluru", "mumbai", "delhi"])
 
     open_meteo_base_url: str = "https://api.open-meteo.com/v1/forecast"
@@ -98,6 +108,7 @@ class Settings(BaseSettings):
             "https://overpass.private.coffee/api/interpreter",
         ]
     )
+    openaq_api_key: str | None = None  # OpenAQ v3 key — CPCB/state station data (reachable from any country)
     ogd_api_key: str | None = None  # data.gov.in key — required for CPCB station feed
     ogd_cpcb_resource_id: str = "3b01bcb8-0b14-4abf-b6f2-c1bfd384ba69"
     imd_api_base_url: str | None = None  # IMD access is by arrangement; unset == unavailable

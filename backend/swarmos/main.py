@@ -84,6 +84,76 @@ def _preload_models() -> None:
     threading.Thread(target=run, name="model-preload", daemon=True).start()
 
 
+def tune_database() -> None:
+    """Cap PostgreSQL's write-ahead log on the app's own database and report its size.
+
+    Postgres lets WAL grow to 1 GB before forcing a checkpoint; on a 500 MB volume a burst of writes (seeding,
+    training) fills the disk. Needs a superuser connection (Railway's Postgres template gives one); otherwise skipped.
+    """
+    settings = get_settings()
+    engine = get_engine()
+    if engine.dialect.name != "postgresql":
+        return
+    try:
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+            if settings.db_max_wal_size and conn.execute(text("SELECT rolsuper FROM pg_roles WHERE rolname = current_user")).scalar():
+                current = conn.execute(text("SHOW max_wal_size")).scalar()
+                if current != settings.db_max_wal_size:
+                    conn.execute(text(f"ALTER SYSTEM SET max_wal_size = '{settings.db_max_wal_size}'"))
+                    conn.execute(text("ALTER SYSTEM SET min_wal_size = '32MB'"))
+                    conn.execute(text("SELECT pg_reload_conf()"))
+                conn.execute(text("CHECKPOINT"))  # recycle WAL segments now
+            db_mb = conn.execute(text("SELECT pg_database_size(current_database()) / 1048576")).scalar()
+            try:
+                wal_mb = conn.execute(text("SELECT (coalesce(sum(size), 0) / 1048576)::int FROM pg_ls_waldir()")).scalar()
+            except Exception:
+                wal_mb = None
+            tables = conn.execute(text(
+                "SELECT relname, (pg_total_relation_size(relid) / 1048576)::int FROM pg_statio_user_tables "
+                "ORDER BY pg_total_relation_size(relid) DESC LIMIT 6")).all()
+            log.info("database_tuned", extra={"database_mb": db_mb, "wal_mb": wal_mb, "tables_mb": {t: mb for t, mb in tables},
+                                               "max_wal_size": conn.execute(text("SHOW max_wal_size")).scalar()})
+    except Exception as exc:  # pragma: no cover - depends on the database's permissions
+        log.warning("database_tuning_skipped", extra={"error_type": type(exc).__name__, "error": str(exc)[:200]})
+
+
+def _reclaim_space() -> None:
+    """Prune old live readings and vacuum, so the space is reusable before the pre-build writes more."""
+    try:
+        from swarmos.integrations.sync import prune_measurements
+
+        settings = get_settings()
+        removed = prune_measurements(settings.measurement_retention_days)
+        engine = get_engine()
+        if engine.dialect.name == "postgresql":
+            with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+                conn.execute(text("VACUUM (ANALYZE) measurements"))
+                db_mb = conn.execute(text("SELECT pg_database_size(current_database()) / 1048576")).scalar()
+        else:
+            db_mb = None
+        log.info("database_space_reclaimed", extra={"removed": removed, "database_mb": db_mb,
+                                                     "retention_days": settings.measurement_retention_days})
+    except Exception as exc:  # pragma: no cover - best effort
+        log.warning("database_reclaim_skipped", extra={"error_type": type(exc).__name__, "error": str(exc)[:200]})
+
+
+def _prebuild_cities(stop) -> None:  # type: ignore[no-untyped-def]
+    """Build every city's simulated data in the background so switching to a new city is instant."""
+    import threading
+
+    def run() -> None:
+        try:
+            from swarmos.demo.seed import prebuild_cities
+
+            _reclaim_space()
+            time.sleep(20)  # let startup work (model training, first syncs) get going first
+            prebuild_cities(get_settings(), stop, pause_s=2.0)
+        except Exception as exc:  # pragma: no cover - never break the API
+            log.warning("city_prebuild_skipped", extra={"error_type": type(exc).__name__})
+
+    threading.Thread(target=run, name="city-prebuild", daemon=True).start()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
@@ -98,18 +168,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # Keep serving: /api/health/ready and the API's 503 responses then explain the problem to operators.
         log.error("database_unreachable_at_startup", extra={"error_type": type(exc).__name__})
     worker = None
+    import threading
+
+    stop_prebuild = threading.Event()
     if settings.worker_embedded and settings.job_mode == "worker" and settings.env != "test":
         from swarmos.jobs.worker import EmbeddedWorker
+
+        tune_database()
 
         worker = EmbeddedWorker()
         worker.start()
         if settings.auto_train_models:
             _queue_missing_models()
         _preload_models()
+        if settings.demo_mode and settings.prebuild_cities:
+            _prebuild_cities(stop_prebuild)
     log.info("api_started", extra={"env": settings.env, "agents": len(AGENTS), "worker_embedded": bool(worker)})
     try:
         yield
     finally:
+        stop_prebuild.set()
         if worker:
             worker.stop()
         get_engine().dispose()
@@ -150,9 +228,12 @@ def create_app() -> FastAPI:
         if not request.url.path.startswith("/api/"):
             response.headers.setdefault(
                 "Content-Security-Policy",
-                "default-src 'self'; img-src 'self' data: blob: https://tiles.openfreemap.org; "
-                "connect-src 'self' https://tiles.openfreemap.org; worker-src 'self' blob:; "
-                "style-src 'self' 'unsafe-inline'; font-src 'self' data:; frame-ancestors 'none'",
+                # Same policy as vercel.json: the MapmyIndia Web SDK loads scripts, styles, tiles and fonts from its CDN.
+                "default-src 'self'; script-src 'self' https://sdk.mappls.com https://apis.mappls.com https://*.mappls.com; "
+                "style-src 'self' 'unsafe-inline' https://*.mappls.com; "
+                "img-src 'self' data: blob: https://*.mappls.com https://*.mapmyindia.com; "
+                "connect-src 'self' https://*.mappls.com https://*.mapmyindia.com; font-src 'self' data: https://*.mappls.com; "
+                "worker-src 'self' blob:; child-src blob:; frame-ancestors 'none'",
             )
         elif not request.url.path.startswith("/api/docs"):
             response.headers["Cache-Control"] = "no-store"  # never let browsers/SW cache privileged API responses

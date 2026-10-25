@@ -185,3 +185,59 @@ def test_omt_poi_layer_mapping():
     assert omt_layer({"class": "hospital", "subclass": "clinic"}) == "clinic"
     assert omt_layer({"class": "police", "subclass": "police"}) == "police"
     assert omt_layer({"class": "bus", "subclass": "bus_stop"}) is None
+
+
+def test_openaq_requires_key():
+    from swarmos.integrations.adapters import OpenAqStations
+
+    ok, reason = OpenAqStations().configured(get_settings())
+    assert not ok and "SWARMOS_OPENAQ_API_KEY" in reason
+
+
+def test_openaq_unit_conversion():
+    from swarmos.integrations.adapters import openaq_value
+
+    assert openaq_value("pm2_5", 41.5, "µg/m³") == 41.5
+    assert openaq_value("nitrogen_dioxide", 0.02, "ppm") == 37.6
+    assert openaq_value("carbon_monoxide", 1200, "µg/m³") == 1.2
+    assert openaq_value("carbon_monoxide", 1.0, "ppm") == 1.145
+    assert openaq_value("pm10", -3, "µg/m³") is None
+    assert openaq_value("pm10", 5, "particles/cm³") is None
+
+
+async def test_openaq_fetch_picks_fresh_stations_and_normalises():
+    from types import SimpleNamespace
+
+    from swarmos.integrations.adapters import OpenAqStations
+
+    recent = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    locations = {"results": [
+        {"id": 1, "name": "Anand Vihar, Delhi - DPCC", "coordinates": {"latitude": 28.65, "longitude": 77.31},
+         "datetimeLast": {"utc": recent}, "provider": {"name": "CPCB"},
+         "sensors": [{"id": 11, "parameter": {"name": "pm25", "units": "µg/m³"}},
+                     {"id": 12, "parameter": {"name": "no2", "units": "ppm"}},
+                     {"id": 13, "parameter": {"name": "temperature", "units": "c"}}]},
+        {"id": 2, "name": "Dead station", "coordinates": {"latitude": 28.6, "longitude": 77.2},
+         "datetimeLast": {"utc": "2019-01-01T00:00:00Z"},
+         "sensors": [{"id": 21, "parameter": {"name": "pm25", "units": "µg/m³"}}]},
+    ]}
+    latest = {"results": [
+        {"sensorsId": 11, "value": 182.0, "datetime": {"utc": recent}},
+        {"sensorsId": 12, "value": 0.05, "datetime": {"utc": recent}},
+        {"sensorsId": 13, "value": 24.0, "datetime": {"utc": recent}},
+    ]}
+    seen = []
+
+    def handler(request):
+        seen.append(request.url.path)
+        assert request.headers["X-API-Key"] == "k"
+        return httpx.Response(200, json=latest if request.url.path.endswith("/latest") else locations)
+
+    settings = get_settings().model_copy(update={"openaq_api_key": "k"})
+    city = SimpleNamespace(id="delhi", name="Delhi", lat=28.61, lon=77.21)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
+        out = await OpenAqStations().fetch(c, settings, city)
+    assert seen == ["/v3/locations", "/v3/locations/1/latest"]  # the stale station is skipped
+    got = {m.metric: m.value for m in out.measurements}
+    assert got == {"pm2_5": 182.0, "nitrogen_dioxide": 94.0}
+    assert all(m.category == "air_quality_station" and m.entity.startswith("Anand Vihar") for m in out.measurements)

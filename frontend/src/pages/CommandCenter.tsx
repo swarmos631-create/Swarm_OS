@@ -49,6 +49,7 @@ export function CommandCenter() {
     refetchInterval: 60_000,
   });
   const d = q.data;
+  const switching = q.isPlaceholderData; // previous city's numbers shown while the new city loads
   const [severity, setSeverity] = useState<"all" | Severity>("all");
   const [showIncidents, setShowIncidents] = useState(true);
   const [showFacilities, setShowFacilities] = useState(true);
@@ -60,7 +61,7 @@ export function CommandCenter() {
       <div className="page-head">
         <div>
           <h1>Command Center — {city?.name}</h1>
-          <p>{TODAY.format(new Date())} · Real-time overview · {d ? <>Updated <Timestamp iso={d.generated_at} /></> : "Loading…"}</p>
+          <p>{TODAY.format(new Date())} · Real-time overview · {switching ? `Loading ${city?.name ?? "city"}…` : d ? <>Updated <Timestamp iso={d.generated_at} /></> : "Loading…"}</p>
         </div>
         <div className="row wrap">
           <Link className="btn" to={`/c/${cityId}/map`}><Icon name="map" />Open map</Link>
