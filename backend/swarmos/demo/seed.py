@@ -1,20 +1,25 @@
-"""Development bootstrap: catalog, source registry, dev accounts, sample documents and DEMO fixtures.
+"""Development bootstrap: catalog, source registry, dev accounts, sample documents and simulated city data.
 
-Every demo record is tagged ``provenance='demo'`` and comes from the ``swarmos-demo`` source. Demo data is
-generated only for the configured pilot cities and only when SWARMOS_DEMO_MODE=true.
+Every simulated record is tagged ``provenance='demo'`` (shown as "Simulated") and comes from the ``swarmos-demo``
+source. It is generated when SWARMOS_DEMO_MODE=true: for the pilot cities at bootstrap, and for any other city the
+first time it is opened when SWARMOS_SIMULATE_ALL_CITIES=true. Time series are refreshed so they always end at the
+current hour; real feeds always take precedence over simulated values for the same metric.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import random
 import secrets
 import string
-from datetime import timedelta
+import threading
+import time
+from datetime import datetime, timedelta
 from importlib import resources
 from pathlib import Path
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from swarmos.ai.retrieval import ingest
@@ -22,6 +27,7 @@ from swarmos.cities import sync_catalog
 from swarmos.config import REPO_ROOT, Settings
 from swarmos.core.security import hash_password
 from swarmos.db import utcnow
+from swarmos.demo import simulate
 from swarmos.integrations.base import NormalizedFeature, NormalizedMeasurement, SyncPayload
 from swarmos.integrations.sync import persist_payload, sync_registry
 from swarmos.ml import complaints, synthetic
@@ -37,6 +43,7 @@ from swarmos.models import (
     UserCity,
 )
 
+log = logging.getLogger("swarmos.simulate")
 DEMO = "swarmos-demo"
 SCALE = {"bengaluru": 1.0, "mumbai": 1.2, "delhi": 1.7}
 DEV_USERS = [
@@ -95,17 +102,18 @@ def _offset(city: City, rng: random.Random, spread: float = 0.08) -> tuple[float
     return round(city.lat + rng.uniform(-spread, spread), 5), round(city.lon + rng.uniform(-spread, spread), 5)
 
 
-def seed_demo_city(db: Session, city: City) -> dict[str, int]:
+def _scale(city: City) -> float:
+    return SCALE.get(city.id) or max(0.25, min(2.0, (city.population or 3_000_000) / 8_000_000))
+
+
+def seed_series(db: Session, city: City, now: datetime | None = None) -> int:
+    """(Re)generate every simulated time series for one city so it ends at the current hour."""
     rng = random.Random(f"demo:{city.id}")
     seed = sum(ord(c) for c in city.id)
-    scale = SCALE.get(city.id, 1.0)
-    now = floor_hour(utcnow())
+    scale = _scale(city)
+    now = floor_hour(now or utcnow())
     start14 = now - timedelta(hours=24 * 14 - 1)
-    # wipe previous demo rows for this city (only demo provenance)
     db.execute(delete(Measurement).where(Measurement.city_id == city.id, Measurement.source_id == DEMO))
-    db.execute(delete(GeoFeature).where(GeoFeature.city_id == city.id, GeoFeature.source_id == DEMO))
-    db.execute(delete(Incident).where(Incident.city_id == city.id, Incident.provenance == "demo"))
-    db.execute(delete(ServiceRequest).where(ServiceRequest.city_id == city.id, ServiceRequest.provenance == "demo"))
 
     m: list[NormalizedMeasurement] = []
 
@@ -179,6 +187,23 @@ def seed_demo_city(db: Session, city: City) -> dict[str, int]:
                  "Solid Waste Management"]:
         add_series("resources", "available_crews", "crews", [now], [rng.randint(1, 4)], entity=dept)
 
+    m.extend(simulate.environment(city, now))
+    m.extend(simulate.land_use_and_growth(city, now))
+    m.extend(simulate.health_aggregates(city, now))
+    return persist_payload(db, DEMO, city, SyncPayload(measurements=m), provenance="demo")
+
+
+def seed_static(db: Session, city: City, *, reset: bool = False) -> dict[str, int]:
+    """Assets, facilities, incidents and service requests — created once; operators may edit them afterwards."""
+    if reset:
+        db.execute(delete(GeoFeature).where(GeoFeature.city_id == city.id, GeoFeature.source_id == DEMO))
+        db.execute(delete(Incident).where(Incident.city_id == city.id, Incident.provenance == "demo"))
+        db.execute(delete(ServiceRequest).where(ServiceRequest.city_id == city.id, ServiceRequest.provenance == "demo"))
+    elif db.scalar(select(func.count(Incident.id)).where(Incident.city_id == city.id, Incident.provenance == "demo")):
+        return {"records": 0, "incidents": 0, "service_requests": 0}
+    rng = random.Random(f"demo-static:{city.id}")
+    seed = sum(ord(c) for c in city.id)
+    now = floor_hour(utcnow())
     feats = []
     for i in range(12):
         layer = "asset_bridge" if i < 4 else "asset_road"
@@ -186,7 +211,9 @@ def seed_demo_city(db: Session, city: City) -> dict[str, int]:
         feats.append(NormalizedFeature(layer=layer, external_id=f"demo-asset-{i}", name=f"{'Flyover' if i < 4 else 'Road segment'} D{i + 1}",
                                        lat=lat, lon=lon, properties={"condition_index": rng.randint(15, 95),
                                                                      "last_inspected": f"202{rng.randint(2, 5)}-0{rng.randint(1, 9)}-15"}))
-    n = persist_payload(db, DEMO, city, SyncPayload(measurements=m, features=feats), provenance="demo")
+    real_layers = set(db.scalars(select(GeoFeature.layer).where(GeoFeature.city_id == city.id, GeoFeature.provenance != "demo").distinct()))
+    feats.extend(f for f in simulate.facilities(city) if f.layer not in real_layers)
+    n = persist_payload(db, DEMO, city, SyncPayload(features=feats), provenance="demo")
 
     # Incidents
     templates = [("Fallen tree blocking carriageway", "road", "high"), ("Waterlogging at underpass", "flooding", "high"),
@@ -201,18 +228,18 @@ def seed_demo_city(db: Session, city: City) -> dict[str, int]:
         lat, lon = _offset(city, rng, 0.06)
         reported = now - timedelta(hours=rng.uniform(0.3, 70))
         status = rng.choice(["open", "open", "acknowledged", "in_progress", "resolved"])
-        inc = Incident(city_id=city.id, title=f"[DEMO] {title} — Ward {i % 12 + 1}", description="Synthetic demonstration incident.", category=cat,
+        inc = Incident(city_id=city.id, title=f"{title} — Ward {i % 12 + 1}", description="Simulated incident (generated data).", category=cat,
                        severity=sev, status=status, lat=lat, lon=lon, provenance="demo", source=DEMO, reported_at=reported,
                        resolved_at=reported + timedelta(hours=rng.uniform(1, 8)) if status == "resolved" else None)
         db.add(inc)
         db.flush()
-        db.add(IncidentEvent(incident_id=inc.id, kind="created", to_status="open", note="Demo fixture", created_at=reported))
+        db.add(IncidentEvent(incident_id=inc.id, kind="created", to_status="open", note="Simulated record", created_at=reported))
         incidents += 1
     # Correlated cluster (three incidents close in space and time)
     clat, clon = _offset(city, rng, 0.03)
     for j, (title, cat, sev) in enumerate([("Waterlogging on arterial road", "flooding", "high"), ("Vehicle stalled in flood water", "road", "moderate"),
                                            ("Drain overflow into homes", "flooding", "high")]):
-        db.add(Incident(city_id=city.id, title=f"[DEMO] {title}", description="Synthetic demonstration incident.", category=cat, severity=sev,
+        db.add(Incident(city_id=city.id, title=title, description="Simulated incident (generated data).", category=cat, severity=sev,
                         status="open", lat=clat + j * 0.002, lon=clon + j * 0.002, provenance="demo", source=DEMO,
                         reported_at=now - timedelta(hours=1 + j * 0.5)))
         incidents += 1
@@ -227,10 +254,99 @@ def seed_demo_city(db: Session, city: City) -> dict[str, int]:
             if resolved > now:
                 resolved = None
         lat, lon = _offset(city, rng, 0.1)
-        db.add(ServiceRequest(city_id=city.id, text=f"[DEMO] {r['text']}", category=r["category"], classified_by="demo-label",
+        db.add(ServiceRequest(city_id=city.id, text=r["text"], category=r["category"], classified_by="demo-label",
                               status="resolved" if resolved else "open", ward=f"Ward {rng.randint(1, 12)}", lat=lat, lon=lon,
                               provenance="demo", created_at=created, resolved_at=resolved))
     return {"records": n, "incidents": incidents, "service_requests": len(rows)}
+
+
+def seed_demo_city(db: Session, city: City) -> dict[str, int]:
+    """Full reset of one city's simulated data (bootstrap and tests)."""
+    out = seed_static(db, city, reset=True)
+    out["records"] += seed_series(db, city)
+    return out
+
+
+def simulation_enabled(settings: Settings, city: City) -> bool:
+    return settings.demo_mode and (city.is_pilot or settings.simulate_all_cities)
+
+
+_locks: dict[str, threading.Lock] = {}
+_checked: dict[str, float] = {}
+_guard = threading.Lock()
+
+
+def _latest_demo(db: Session, city: City) -> datetime | None:
+    return db.scalar(select(func.max(Measurement.observed_at)).where(
+        Measurement.city_id == city.id, Measurement.source_id == DEMO, Measurement.metric == "speed_kmph"))
+
+
+def ensure_city_data(db: Session, settings: Settings, city: City) -> None:
+    """Make sure a city has simulated data that reaches the current hour.
+
+    No data yet: generated synchronously (the first visit to a city takes a few seconds). Stale by more than two
+    hours: refreshed in a background thread so the request is not held up. Checks are throttled per city.
+    """
+    clock = time.monotonic()
+    if clock - _checked.get(city.id, -1e9) < 60:
+        return
+    _checked[city.id] = clock
+    _queue_real_places(db, settings, city)
+    if not simulation_enabled(settings, city):
+        return
+    latest = _latest_demo(db, city)
+    now = floor_hour(utcnow())
+    if latest is not None:
+        latest = latest if latest.tzinfo else latest.replace(tzinfo=now.tzinfo)
+        if now - latest <= timedelta(hours=2):
+            return
+    with _guard:
+        lock = _locks.setdefault(city.id, threading.Lock())
+    if latest is None:
+        with lock:
+            if _latest_demo(db, city) is None:
+                seed_static(db, city)
+                seed_series(db, city)
+                db.commit()
+                log.info("simulated_city_seeded", extra={"city": city.id})
+        return
+    if lock.locked():
+        return
+    threading.Thread(target=_refresh_in_background, args=(city.id, lock), daemon=True).start()
+
+
+def _queue_real_places(db: Session, settings: Settings, city: City) -> None:
+    """With a MapmyIndia key, fetch real facility locations the first time a city is opened (once per day at most)."""
+    if not settings.mappls_api_key:
+        return
+    if db.scalar(select(func.count(GeoFeature.id)).where(GeoFeature.city_id == city.id, GeoFeature.source_id == "mappls-places")):
+        return
+    from swarmos.jobs import queue
+
+    try:
+        queue.enqueue(db, "sync", {"source_id": "mappls-places", "city_id": city.id},
+                      dedupe_key=f"visit:mappls-places:{city.id}:{utcnow():%Y%m%d}", priority=6, max_attempts=2)
+        db.commit()
+    except Exception:  # pragma: no cover - best effort; the scheduled sync still runs
+        db.rollback()
+        log.exception("mappls_enqueue_failed", extra={"city": city.id})
+
+
+def _refresh_in_background(city_id: str, lock: threading.Lock) -> None:
+    from swarmos.db import session_scope
+
+    if not lock.acquire(blocking=False):
+        return
+    try:
+        with session_scope() as db:
+            city = db.get(City, city_id)
+            if city is not None:
+                seed_series(db, city)
+        log.info("simulated_city_refreshed", extra={"city": city_id})
+    except Exception:  # pragma: no cover - logged, retried on the next check
+        log.exception("simulated_city_refresh_failed", extra={"city": city_id})
+    finally:
+        lock.release()
 
 
 def bootstrap(db: Session, settings: Settings, *, demo: bool | None = None) -> dict[str, object]:
