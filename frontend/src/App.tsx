@@ -17,6 +17,7 @@ const AnalyticsPage = lazy(() => import("./pages/Analytics"));
 const IntegrationsPage = lazy(() => import("./pages/Integrations"));
 const ModelLabPage = lazy(() => import("./pages/ModelLab"));
 const SystemPage = lazy(() => import("./pages/System"));
+const SettingsPage = lazy(() => import("./pages/Settings"));
 
 function DefaultCity() {
   const cities = useCities();
@@ -68,6 +69,7 @@ export function App() {
         <Route path="integrations" element={page(<IntegrationsPage />)} />
         <Route path="models" element={page(<ModelLabPage />)} />
         <Route path="system" element={page(<SystemPage />)} />
+        <Route path="settings" element={page(<SettingsPage />)} />
         <Route path="*" element={<EmptyState title="Page not found">This page does not exist.</EmptyState>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
