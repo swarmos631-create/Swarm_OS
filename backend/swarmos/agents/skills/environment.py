@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from swarmos.agents.contracts import ActionDraft, AgentContext, AgentResult
@@ -13,17 +13,21 @@ from swarmos.agents.skills.common import (
     ist,
     mean,
     naqi,
+    naqi_category,
+    naqi_subindex,
     ok,
     records_ref,
     robust_z,
     unavailable,
     window,
 )
+from swarmos.ai.runtime import ModelUnavailable
+from swarmos.ml.features import aq_row
 from swarmos.services.data import Series
 
 # IMD daily rainfall intensity classes (mm / 24 h)
 RAIN_CLASSES = [(204.5, "Extremely heavy"), (115.6, "Very heavy"), (64.5, "Heavy"), (15.6, "Moderate"), (2.5, "Light")]
-WEATHER_LIMITS = ["Model-based weather values (Open-Meteo), not IMD observations or warnings."]
+WEATHER_LIMITS = ["Model-based or simulated weather values (Open-Meteo forecast when reachable, otherwise climate-calibrated simulation), not IMD observations or warnings."]
 
 
 def rain_class(mm: float) -> str:
@@ -77,9 +81,58 @@ def air_quality(ctx: AgentContext) -> AgentResult:
     conf = (0.8 if station_entities else 0.55) * freshness_confidence(used[0] if used else None, ctx.now)
     limitations = [] if station_entities else [
         "Computed from CAMS model concentrations (~40 km grid), not CPCB stations; official AQI may differ substantially."]
-    return ok(f"Indicative AQI {result['aqi']} ({result['category']}), dominant {result['dominant']}.",
-              confidence=conf, method=method, series=used, findings=findings, actions=actions,
-              metrics={**result, "concentrations": {k: round(v, 2) for k, v in conc.items()}}, limitations=limitations)
+    tomorrow = _pm25_tomorrow(ctx)
+    summary = f"Indicative AQI {result['aqi']} ({result['category']}), dominant {result['dominant']}."
+    if tomorrow:
+        summary += f" Tomorrow: PM2.5 ≈ {tomorrow['pm2_5']} µg/m³ ({tomorrow['category']})."
+        if tomorrow["pm25_subindex"] > 200 and result["aqi"] <= 200:
+            findings.append(finding("Air quality expected to worsen tomorrow",
+                                    f"Forecast PM2.5 {tomorrow['pm2_5']} µg/m³ ({tomorrow['category']}).", "moderate"))
+    return ok(summary, confidence=conf, method=method + ("+" + tomorrow["model"] if tomorrow else ""), series=used, findings=findings,
+              actions=actions, limitations=limitations,
+              metrics={**result, "concentrations": {k: round(v, 2) for k, v in conc.items()}, "forecast_tomorrow": tomorrow})
+
+
+def _daily_means(series: Series | None, now: datetime, days: int = 3) -> list[float] | None:
+    if series is None:
+        return None
+    out = []
+    for d in range(days):
+        vals = window(series, now - timedelta(hours=24 * (d + 1)), now - timedelta(hours=24 * d))
+        if len(vals) < 12:
+            return None
+        out.append(sum(vals) / len(vals))
+    return out
+
+
+def _pm25_tomorrow(ctx: AgentContext) -> dict[str, Any] | None:
+    """Next-day PM2.5 from the Kaggle-trained model (50 Indian cities). Silently skipped when unavailable."""
+    pm25 = _daily_means(ctx.data.one_series("pm2_5", hours_back=72, category="air_quality"), ctx.now)
+    pm10 = _daily_means(ctx.data.one_series("pm10", hours_back=24, category="air_quality"), ctx.now, days=1)
+    temp = ctx.data.one_series("temperature_2m", hours_back=0, hours_forward=48, kinds=("forecast",), category="weather")
+    if not pm25 or not pm10 or temp is None:
+        return None
+    lo, hi = ctx.now + timedelta(hours=12), ctx.now + timedelta(hours=36)
+
+    def nxt(metric: str) -> list[float]:
+        s = ctx.data.one_series(metric, hours_back=0, hours_forward=48, kinds=("forecast",), category="weather")
+        return window(s, lo, hi) if s else []
+
+    t = window(temp, lo, hi)
+    rain, wind, rh = nxt("precipitation"), nxt("wind_speed_10m"), nxt("relative_humidity_2m")
+    if len(t) < 12:
+        return None
+    weather = {"tmax": max(t), "tmin": min(t), "rain": sum(rain), "wind": max(wind) if wind else 10.0,
+               "rh": sum(rh) / len(rh) if rh else 60.0}
+    try:
+        model = ctx.models.load("pm25_forecaster")
+        row = aq_row(pm25, pm10[0], weather, (ctx.now + timedelta(days=1)).timetuple().tm_yday, ctx.city.lat, ctx.city.lon)
+        value = max(0.0, float(model.estimator.predict([row])[0]))
+    except (ModelUnavailable, ValueError):
+        return None
+    sub = naqi_subindex("pm2_5", value) or 0
+    return {"pm2_5": round(value, 1), "pm25_subindex": sub, "category": naqi_category(sub), "model": model.label,
+            "model_mae": model.metrics.get("mae")}
 
 
 def _forecast(ctx: AgentContext, metric: str, hours: float = 24) -> Series | None:
