@@ -171,3 +171,36 @@ def test_open_access_needs_no_sign_in(monkeypatch):
     r = anon.post("/api/v1/cities/bengaluru/tasks", json={"prompt": "check water quality"})
     assert r.status_code in (200, 201, 202), r.text
     assert anon.get("/api/v1/auth/me").json()["id"] == me.json()["id"]  # one shared account, created once
+
+
+def test_simulated_data_for_any_city_runs_every_agent(admin, monkeypatch):
+    """With SWARMOS_SIMULATE_ALL_CITIES a never-synced city gets climate-calibrated simulated data on first visit."""
+    from swarmos.agents.registry import REGISTRY
+    from swarmos.demo import seed
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "simulate_all_cities", True)
+    monkeypatch.setattr(settings, "job_mode", "inline")
+    seed._checked.clear()
+    d = admin.get("/api/v1/cities/jaipur/dashboard").json()
+    by_id = {i["id"]: i for i in d["indicators"]}
+    assert by_id["temperature"]["provenance"] == "demo" and by_id["power_demand"]["status"] == "available"
+    task = admin.post("/api/v1/cities/jaipur/tasks", json={"prompt": "full audit", "agent_ids": list(REGISTRY)}).json()
+    done = admin.get(f"/api/v1/cities/jaipur/tasks/{task['id']}").json()
+    statuses = {e["agent_id"]: e["status"] for e in done["executions"]}
+    assert len(statuses) == len(REGISTRY)
+    assert not [a for a, s in statuses.items() if s not in ("succeeded", "degraded")], statuses
+
+
+def test_simulated_weather_follows_city_climate():
+    from datetime import UTC, datetime
+
+    from swarmos.demo import simulate
+    from swarmos.models import City
+
+    now = datetime(2026, 5, 20, 6, tzinfo=UTC)
+    delhi = City(id="delhi", name="Delhi", state="Delhi", lat=28.61, lon=77.21, bbox=[76.8, 28.4, 77.4, 28.9], population=16_000_000)
+    shimla = City(id="shimla", name="Shimla", state="HP", lat=31.10, lon=77.17, bbox=[77.0, 31.0, 77.3, 31.2], population=200_000)
+    temp = lambda c: max(m.value for m in simulate.environment(c, now) if m.metric == "daily_temperature_2m_max")  # noqa: E731
+    assert simulate.nearest_climate(delhi)[0] == "Delhi" and temp(delhi) > temp(shimla) + 8  # May: plains far hotter than hills
+    assert len([f for f in simulate.facilities(delhi) if f.layer == "hospital"]) > len([f for f in simulate.facilities(shimla) if f.layer == "hospital"])
