@@ -53,7 +53,7 @@ def test_ok_requires_confidence_and_demo_is_labelled():
     with pytest.raises(ValidationError):
         AgentResult(status="ok", summary="x")
     r = AgentResult(status="ok", summary="x", confidence=0.7, provenance=["demo", "live"])
-    assert any("SYNTHETIC" in lim for lim in r.limitations)
+    assert any("SIMULATED" in lim for lim in r.limitations)
 
 
 @pytest.mark.parametrize("pollutant,conc,expected", [
