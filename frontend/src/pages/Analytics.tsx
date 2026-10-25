@@ -16,7 +16,7 @@ interface Analytics {
   environment: Record<string, { unit: string; provenance: string[]; daily: [string, number][]; aggregation: string }>;
 }
 
-const SEV = { critical: "#f43f5e", high: "#fb923c", moderate: "#fbbf24", low: "#60a5fa" };
+const SEV = { critical: "var(--red)", high: "var(--orange)", moderate: "var(--amber)", low: "var(--blue)" };
 
 export default function AnalyticsPage() {
   const { cityId, city } = useCity();
@@ -59,7 +59,7 @@ export default function AnalyticsPage() {
                 <Panel key={m} title={label} actions={e?.provenance.map((p) => <ProvenanceBadge key={p} p={p} />)}>
                   {e && e.daily.length > 1 ? (
                     <>
-                      <LineChart series={[{ name: label, points: e.daily.map(([d, v]) => [`${d}T12:00:00Z`, v]), color: m === "pm2_5" ? "#8b5cf6" : m === "precipitation" ? "#38bdf8" : "#22d3ee" }]} height={170} unit={e.unit} label={`${label} ${e.aggregation}`} yZero={m === "precipitation"} />
+                      <LineChart series={[{ name: label, points: e.daily.map(([d, v]) => [`${d}T12:00:00Z`, v]), color: m === "pm2_5" ? "var(--violet)" : m === "precipitation" ? "var(--blue)" : m === "temperature_2m" ? "var(--orange)" : "var(--cyan)" }]} height={170} unit={e.unit} label={`${label} ${e.aggregation}`} yZero={m === "precipitation"} />
                       <p className="xs faint">{titleCase(e.aggregation)} · {e.unit} · Open-Meteo model analysis</p>
                     </>
                   ) : <EmptyState title="Insufficient history">Live synchronisation for this city has not accumulated enough days yet.</EmptyState>}
