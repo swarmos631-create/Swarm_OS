@@ -19,6 +19,8 @@ For each returned path, SwarmOS counts currently open/acknowledged/in-progress i
 
 These counts are not a personal-safety score or accessibility rating. Zero incidents, a missing facility, a gap in mapped coverage, an unknown wheelchair tag, or a shorter travel time does not indicate that a route is safe or accessible. Route paths are sampled for context counts and are not turn-by-turn verification.
 
+Users can leave the routing provider's alternative order intact, sort by estimated duration, sort by the mapped help-facility/station/lamp count per route kilometre, or sort by nearby transit stations tagged `wheelchair=yes`/`designated` per kilometre. The UI states the chosen sorting rule and shows each route's underlying context. These raw mapped-data preferences are not validated safety rankings or route-accessibility checks; capped or incomplete context may alter the ordering. A transit wheelchair tag describes a mapped station record near the route, not the route's step-free continuity or an active service.
+
 ## Privacy, safety and operations
 
 * SwarmOS does not persist the origin, destination, route geometry, or route history.

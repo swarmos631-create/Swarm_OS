@@ -24,6 +24,7 @@ interface RouteOption {
     street_light_features_checked?: number;
     mapped_street_lamp_points_within_100m?: number;
     mapped_wheelchair_accessibility_within_500m?: Record<string, number>;
+    mapped_transit_wheelchair_tags_within_500m?: Record<string, number>;
     wheelchair_features_near_route?: number;
     mapped_feature_evidence?: MappedFeatureEvidence[];
     mapped_feature_evidence_truncated?: boolean;
@@ -52,6 +53,7 @@ interface RouteResponse {
   limitations: string[];
 }
 type Endpoint = { lat: string; lon: string };
+type RoutePreference = "balanced" | "fastest" | "mapped_context" | "transit_wheelchair";
 
 const colors = ["var(--cyan)", "var(--orange)", "var(--violet)"];
 
@@ -62,6 +64,7 @@ export default function SakhiRoutePage() {
   const [mapTarget, setMapTarget] = useState<"origin" | "destination">("origin");
   const [mapError, setMapError] = useState<string | null>(null);
   const [mode, setMode] = useState<"foot" | "bike" | "car">("foot");
+  const [preference, setPreference] = useState<RoutePreference>("balanced");
   const { theme } = useTheme();
   const routes = useMutation({
     mutationFn: () => api<RouteResponse>("/public/cities/" + cityId + "/routes/compare", {
@@ -74,9 +77,10 @@ export default function SakhiRoutePage() {
     ...(origin.lat && origin.lon ? [{ id: "origin", lat: Number(origin.lat), lon: Number(origin.lon), color: "#22d3ee", size: 7, title: "Start", subtitle: "Selected route origin", props: {} }] : []),
     ...(destination.lat && destination.lon ? [{ id: "destination", lat: Number(destination.lat), lon: Number(destination.lon), color: "#fb923c", size: 7, title: "Destination", subtitle: "Selected route destination", props: {} }] : []),
   ];
-  const mapLines = useMemo<MapLine[]>(() => (routes.data?.routes ?? []).map((route, index) => ({
+  const rankedRoutes = useMemo(() => rankRoutes(routes.data?.routes ?? [], preference), [routes.data, preference]);
+  const rankedMapLines = useMemo<MapLine[]>(() => rankedRoutes.map((route, index) => ({
     id: route.id, coordinates: route.geometry.coordinates, color: colors[index % colors.length], title: `Route option ${index + 1}`,
-  })), [routes.data]);
+  })), [rankedRoutes]);
 
   return <>
     <div className="page-head">
@@ -93,6 +97,13 @@ export default function SakhiRoutePage() {
           <Field label="Travel mode"><select className="select" value={mode} onChange={(event) => setMode(event.target.value as typeof mode)}>
             <option value="foot">Walking</option><option value="bike">Cycling</option><option value="car">Driving</option>
           </select></Field>
+          <Field label="Compare preference"><select className="select" value={preference} onChange={(event) => setPreference(event.target.value as RoutePreference)}>
+            <option value="balanced">Balanced — router order</option>
+            <option value="fastest">Shortest estimated time</option>
+            <option value="mapped_context">More mapped public context per km</option>
+            <option value="transit_wheelchair">More transit stops tagged wheelchair yes/designated</option>
+          </select></Field>
+          <p className="xs faint" style={{ margin: 0 }}>Preferences only reorder the returned alternatives using the visible map data. They are not safety rankings; mapped tags do not validate a route.</p>
           <p className="xs faint" style={{ margin: 0 }}>Enter WGS84 latitude/longitude. Points must be within 150 km of {city?.name ?? "this city"}. No address or identity is requested.</p>
           <button className="btn primary" type="submit" disabled={!complete || routes.isPending}>{routes.isPending ? "Finding routes…" : "Compare route options"}</button>
           {routes.error && <ErrorState error={routes.error} />}
@@ -100,10 +111,11 @@ export default function SakhiRoutePage() {
       </Panel>
       <Panel title="Route comparison" className="span-2">
         {!routes.data ? <div className="small muted">Choose endpoints and request route alternatives to see path geometry, estimated travel time, and nearby mapped context.</div> : <>
-          {mapError ? <RouteSketch routes={routes.data.routes} /> : <p className="small muted">Route alternatives are drawn to scale on the map below. Colors identify each option; the map fits to their returned geometry.</p>}
-          <RouteLegend routes={routes.data.routes} />
+          {mapError ? <RouteSketch routes={rankedRoutes} /> : <p className="small muted">Route alternatives are drawn to scale on the map below. Colors identify each option; the map fits to their returned geometry.</p>}
+          <RouteLegend routes={rankedRoutes} />
+          <p className="xs faint" style={{ margin: "8px 0 0" }}>{preferenceDescription(preference)}</p>
           <div className="grid cols-3" style={{ marginTop: 12 }}>
-            {routes.data.routes.map((route, index) => <RouteCard key={route.id} route={route} index={index} />)}
+            {rankedRoutes.map((route, index) => <RouteCard key={route.id} route={route} index={index} preference={preference} />)}
           </div>
           <p className="xs faint" style={{ marginBottom: 0 }}>{routes.data.attribution} · <a href={routes.data.source_url} target="_blank" rel="noreferrer">Provider policy and source ↗</a></p>
           {routes.data.limitations.map((limitation) => <p key={limitation} className="xs muted" style={{ margin: "6px 0 0" }}>• {limitation}</p>)}
@@ -119,7 +131,7 @@ export default function SakhiRoutePage() {
       </div>
       {mapError && <div className="notice error" role="alert">{mapError}</div>}
       {city && <div className="map-wrap" style={{ height: 360, position: "relative", borderRadius: 12, overflow: "hidden" }}>
-        <MapCanvas center={{ lat: city.lat, lon: city.lon }} zoom={city.zoom} points={mapPoints} lines={mapLines} mode3d={false} theme={theme}
+        <MapCanvas center={{ lat: city.lat, lon: city.lon }} zoom={city.zoom} points={mapPoints} lines={rankedMapLines} mode3d={false} theme={theme}
           label={`Choose route endpoints on the ${city.name} map`} onFail={setMapError}
           onMapClick={([lon, lat]) => {
             const endpoint = { lat: lat.toFixed(6), lon: lon.toFixed(6) };
@@ -218,7 +230,7 @@ function RouteLegend({ routes }: { routes: RouteOption[] }) {
   </div>;
 }
 
-function RouteCard({ route, index }: { route: RouteOption; index: number }) {
+function RouteCard({ route, index, preference }: { route: RouteOption; index: number; preference: RoutePreference }) {
   const counts = route.context.mapped_help_facilities_within_500m;
   const facilityCount = Object.values(counts).reduce((sum, count) => sum + count, 0);
   const transitCounts = route.context.mapped_transit_stations_within_500m ?? {};
@@ -226,9 +238,10 @@ function RouteCard({ route, index }: { route: RouteOption; index: number }) {
   const streetLampCount = route.context.mapped_street_lamp_points_within_100m ?? 0;
   const incidentOrigins = route.context.incident_points_by_provenance_within_250m ?? {};
   const wheelchair = route.context.mapped_wheelchair_accessibility_within_500m ?? {};
+  const transitWheelchair = route.context.mapped_transit_wheelchair_tags_within_500m ?? {};
   const mappedEvidence = route.context.mapped_feature_evidence ?? [];
   return <section className="panel panel-body" style={{ borderTop: "3px solid " + colors[index % colors.length] }}>
-    <div className="row between"><b>Option {index + 1}</b><StatusBadge s={index === 0 ? "succeeded" : "candidate"} label={index === 0 ? "Router's first choice" : "Alternative"} /></div>
+    <div className="row between"><b>Option {index + 1}</b><StatusBadge s={index === 0 && preference !== "balanced" ? "succeeded" : "candidate"} label={index === 0 && preference !== "balanced" ? "Top by preference" : preference === "balanced" && index === 0 ? "Router's first choice" : "Alternative"} /></div>
     <div style={{ fontSize: 22, fontWeight: 650, margin: "8px 0 4px" }}>{fmtNum(route.duration_s / 60)} min</div>
     <div className="small muted">{fmtNum(route.distance_m / 1000)} km</div>
     <div className="stack" style={{ gap: 5, marginTop: 12 }}>
@@ -242,6 +255,7 @@ function RouteCard({ route, index }: { route: RouteOption; index: number }) {
       {Object.entries(transitCounts).map(([layer, count]) => <span key={layer} className="xs faint">{layer.replaceAll("_", " ")}: {count}</span>)}
       {!transitCount && <span className="xs faint">No bus or rail stations were found in synced records near the sampled route; coverage may be incomplete.</span>}
       <span className="xs faint">Station counts do not show routes, schedules, accessibility, hours, or whether service is operating.</span>
+      <span className="xs faint">Transit wheelchair tags within 500 m: {(["yes", "designated", "limited", "no", "unknown"] as const).map((value) => `${value} ${transitWheelchair[value] ?? 0}`).join(" · ")}</span>
       <span className="small">Community-mapped street-lamp points within 100 m: <b>{streetLampCount}</b></span>
       <span className="xs faint">Mapped poles do not verify working status or how much of the road is illuminated. Zero mapped points does not mean lamps are absent.</span>
       <span className="small">Nearby mapped wheelchair tags: {(["yes", "limited", "no", "designated", "unknown"] as const).map((value) => `${value} ${wheelchair[value] ?? 0}`).join(" · ")}</span>
@@ -265,4 +279,30 @@ function RouteCard({ route, index }: { route: RouteOption; index: number }) {
       <span className="xs faint">Context radius is measured from sampled route geometry; coverage depends on mapped records.</span>
     </div>
   </section>;
+}
+
+function rankRoutes(routes: RouteOption[], preference: RoutePreference): RouteOption[] {
+  return routes.map((route, index) => ({ route, index })).sort((a, b) => {
+    if (preference === "balanced") return a.index - b.index;
+    if (preference === "fastest") return a.route.duration_s - b.route.duration_s || a.index - b.index;
+    const routeScore = (route: RouteOption) => {
+      const lengthKm = Math.max(route.distance_m / 1000, 0.001);
+      if (preference === "transit_wheelchair") {
+        const tags = route.context.mapped_transit_wheelchair_tags_within_500m ?? {};
+        return ((tags.yes ?? 0) + (tags.designated ?? 0)) / lengthKm;
+      }
+      const facilities = Object.values(route.context.mapped_help_facilities_within_500m ?? {}).reduce((sum, value) => sum + value, 0);
+      const stations = Object.values(route.context.mapped_transit_stations_within_500m ?? {}).reduce((sum, value) => sum + value, 0);
+      const lamps = route.context.mapped_street_lamp_points_within_100m ?? 0;
+      return (facilities + stations + lamps) / lengthKm;
+    };
+    return routeScore(b.route) - routeScore(a.route) || a.route.duration_s - b.route.duration_s || a.index - b.index;
+  }).map(({ route }) => route);
+}
+
+function preferenceDescription(preference: RoutePreference): string {
+  if (preference === "fastest") return "Sorted by the routing provider's estimated duration; not live traffic.";
+  if (preference === "mapped_context") return "Sorted by mapped help facilities and bus/rail stations within 500 m plus street-lamp points within 100 m, normalized per route kilometre. Mapping coverage is uneven; this is not a safety score.";
+  if (preference === "transit_wheelchair") return "Sorted by nearby bus/rail stations tagged wheelchair=yes or designated per route kilometre. This does not verify schedules, station operation, or step-free route continuity.";
+  return "Showing the routing provider's original alternative order; no SwarmOS safety ranking is applied.";
 }

@@ -84,6 +84,9 @@ def _context(db: Session, city_id: str, geometry: list[list[float]]) -> dict[str
                 "mapped_wheelchair_accessibility_within_500m": {
                     "yes": 0, "limited": 0, "no": 0, "designated": 0, "unknown": 0,
                 },
+                "mapped_transit_wheelchair_tags_within_500m": {
+                    "yes": 0, "limited": 0, "no": 0, "designated": 0, "unknown": 0,
+                },
                 "wheelchair_features_near_route": 0, "mapped_feature_evidence": [],
                 "mapped_feature_evidence_truncated": False, "provenance": []}
     lons, lats = [point[0] for point in geometry], [point[1] for point in geometry]
@@ -118,10 +121,14 @@ def _context(db: Session, city_id: str, geometry: list[list[float]]) -> dict[str
     )
     accessibility_features = [row for row in near if row.layer in (*HELP_LAYERS, *TRANSIT_LAYERS)]
     wheelchair = Counter()
+    transit_wheelchair = Counter()
     for row in accessibility_features:
         value = row.properties.get("wheelchair") if isinstance(row.properties, dict) else None
         value = str(value).strip().lower() if value is not None else ""
-        wheelchair[value if value in {"yes", "limited", "no", "designated"} else "unknown"] += 1
+        tag = value if value in {"yes", "limited", "no", "designated"} else "unknown"
+        wheelchair[tag] += 1
+        if row.layer in TRANSIT_LAYERS:
+            transit_wheelchair[tag] += 1
     public_features = sorted(
         ((row, distance) for row, distance in near_with_distance
          if row.layer in (*HELP_LAYERS, *TRANSIT_LAYERS, *STREET_LIGHT_LAYERS)),
@@ -160,6 +167,9 @@ def _context(db: Session, city_id: str, geometry: list[list[float]]) -> dict[str
             "context_truncated": incident_candidates_truncated or feature_candidates_truncated,
             "mapped_wheelchair_accessibility_within_500m": {
                 key: wheelchair[key] for key in ("yes", "limited", "no", "designated", "unknown")
+            },
+            "mapped_transit_wheelchair_tags_within_500m": {
+                key: transit_wheelchair[key] for key in ("yes", "limited", "no", "designated", "unknown")
             },
             "wheelchair_features_near_route": len(accessibility_features),
             "mapped_feature_evidence": mapped_feature_evidence,

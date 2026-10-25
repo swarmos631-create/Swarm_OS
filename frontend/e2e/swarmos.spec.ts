@@ -172,33 +172,37 @@ test("PWA manifest, icons and service worker", async ({ page, request }) => {
 
 test("SakhiRoute compares real-route response context and opens mapped evidence", async ({ page }) => {
   await page.route("**/api/v1/public/cities/bengaluru/routes/compare", async (route) => {
+    const context = {
+      open_incident_points_within_250m: 1,
+      incident_points_by_provenance_within_250m: { live: 1 },
+      mapped_help_facilities_within_500m: { clinic: 1 },
+      mapped_transit_stations_within_500m: { bus_station: 1 },
+      facility_features_checked: 1, transit_features_checked: 1,
+      street_light_features_checked: 1, mapped_street_lamp_points_within_100m: 2,
+      mapped_wheelchair_accessibility_within_500m: { yes: 1, limited: 0, no: 0, designated: 0, unknown: 1 },
+      mapped_transit_wheelchair_tags_within_500m: { yes: 1, limited: 0, no: 0, designated: 0, unknown: 0 },
+      wheelchair_features_near_route: 2,
+      mapped_feature_evidence: [
+        { source_id: "osm-overpass", external_id: "node/123456", name: "Central Clinic",
+          layer: "clinic", provenance: "live", distance_to_sampled_route_m: 86, wheelchair: "yes",
+          observed_at: null, fetched_at: "2026-10-25T10:00:00Z" },
+        { source_id: "osm-overpass", external_id: "node/123457", name: "Mapped street lamp",
+          layer: "street_light", provenance: "live", distance_to_sampled_route_m: 95, wheelchair: null,
+          lighting_tag: "yes", lamp_type: "LED", observed_at: null, fetched_at: "2026-10-25T10:00:00Z" },
+      ],
+      mapped_feature_evidence_truncated: true, context_truncated: true,
+      provenance: ["live"],
+    };
     await route.fulfill({ json: {
       city_id: "bengaluru", mode: "foot", source: "FOSSGIS OSRM (mocked test response)",
       attribution: "© OpenStreetMap contributors", source_url: "https://routing.openstreetmap.de/about.html",
-      routes: [{
-        id: "route-1", distance_m: 1450, duration_s: 900,
-        geometry: { type: "LineString", coordinates: [[77.59, 12.97], [77.595, 12.975], [77.60, 12.98]] },
-        context: {
-          open_incident_points_within_250m: 1,
-          incident_points_by_provenance_within_250m: { live: 1 },
-          mapped_help_facilities_within_500m: { clinic: 1 },
-          mapped_transit_stations_within_500m: { bus_station: 1 },
-          facility_features_checked: 1, transit_features_checked: 1,
-          street_light_features_checked: 1, mapped_street_lamp_points_within_100m: 2,
-          mapped_wheelchair_accessibility_within_500m: { yes: 1, limited: 0, no: 0, designated: 0, unknown: 1 },
-          wheelchair_features_near_route: 2,
-          mapped_feature_evidence: [
-            { source_id: "osm-overpass", external_id: "node/123456", name: "Central Clinic",
-              layer: "clinic", provenance: "live", distance_to_sampled_route_m: 86, wheelchair: "yes",
-              observed_at: null, fetched_at: "2026-10-25T10:00:00Z" },
-            { source_id: "osm-overpass", external_id: "node/123457", name: "Mapped street lamp",
-              layer: "street_light", provenance: "live", distance_to_sampled_route_m: 95, wheelchair: null,
-              lighting_tag: "yes", lamp_type: "LED", observed_at: null, fetched_at: "2026-10-25T10:00:00Z" },
-          ],
-          mapped_feature_evidence_truncated: true, context_truncated: true,
-          provenance: ["live"],
-        },
-      }],
+      routes: [
+        { id: "route-1", distance_m: 1450, duration_s: 900,
+          geometry: { type: "LineString", coordinates: [[77.59, 12.97], [77.595, 12.975], [77.60, 12.98]] }, context },
+        { id: "route-2", distance_m: 1000, duration_s: 600,
+          geometry: { type: "LineString", coordinates: [[77.59, 12.97], [77.594, 12.974], [77.60, 12.98]] },
+          context: { ...context, mapped_transit_wheelchair_tags_within_500m: { yes: 2, limited: 0, no: 0, designated: 0, unknown: 0 } } },
+      ],
       limitations: ["Mock response for UI test.", "Mapped street-lamp points are community-mapped OSM infrastructure."],
     } });
   });
@@ -210,17 +214,26 @@ test("SakhiRoute compares real-route response context and opens mapped evidence"
   await destination.getByLabel("Latitude").fill("12.98");
   await destination.getByLabel("Longitude").fill("77.60");
   await page.getByRole("button", { name: "Compare route options" }).click();
-  await expect(page.getByText("Open incident points within 250 m:")).toBeVisible();
+  await expect(page.getByText("Open incident points within 250 m:").first()).toBeVisible();
   const routeCard = page.locator("section.panel.panel-body").filter({ hasText: "Router's first choice" });
   await expect(routeCard).toContainText("Nearby mapped wheelchair tags:");
   await expect(routeCard).toContainText("Record origin: live 1");
   await expect(routeCard).toContainText("Origin is not verification");
   await expect(routeCard).toContainText("yes 1");
   await expect(routeCard).toContainText("Community-mapped street-lamp points within 100 m: 2");
-  await page.getByText("Inspect mapped facility evidence (2+)").click();
-  await expect(page.getByText("Central Clinic")).toBeVisible();
+  await routeCard.getByText("Inspect mapped facility evidence (2+)").click();
+  await expect(routeCard.getByText("Central Clinic")).toBeVisible();
   await expect(routeCard).toContainText("Mapped lit tag: yes (unverified) · lamp type: LED");
-  await expect(page.getByRole("link", { name: "Inspect OpenStreetMap feature ↗" }).first()).toHaveAttribute("href", "https://www.openstreetmap.org/node/123456");
+  await expect(routeCard.getByRole("link", { name: "Inspect OpenStreetMap feature ↗" }).first()).toHaveAttribute("href", "https://www.openstreetmap.org/node/123456");
   await expect(routeCard).toContainText("Counts and evidence are incomplete lower bounds.");
   await expect(page.getByText(/Mapped street-lamp points are community-mapped/)).toBeVisible();
+  await page.getByLabel("Compare preference").selectOption("fastest");
+  const preferenceCard = page.locator("section.panel.panel-body").filter({ hasText: "Top by preference" });
+  await expect(preferenceCard).toContainText("10 min");
+  await expect(page.getByText("Sorted by the routing provider's estimated duration; not live traffic.")).toBeVisible();
+  await page.getByLabel("Compare preference").selectOption("transit_wheelchair");
+  await expect(preferenceCard).toContainText("Transit wheelchair tags within 500 m: yes 2");
+  await page.getByLabel("Compare preference").selectOption("mapped_context");
+  await expect(preferenceCard).toContainText("10 min");
+  await expect(page.getByText(/Sorted by mapped help facilities and bus\/rail stations/)).toBeVisible();
 });

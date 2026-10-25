@@ -264,6 +264,9 @@ def test_sakhi_route_returns_real_route_shape_and_caveats_without_storage(client
     assert data["routes"][0]["context"]["mapped_wheelchair_accessibility_within_500m"] == {
         "yes": 1, "limited": 1, "no": 1, "designated": 1, "unknown": 1,
     }
+    assert data["routes"][0]["context"]["mapped_transit_wheelchair_tags_within_500m"] == {
+        "yes": 1, "limited": 0, "no": 0, "designated": 0, "unknown": 0,
+    }
     assert data["routes"][0]["context"]["wheelchair_features_near_route"] == 5
     evidence = data["routes"][0]["context"]["mapped_feature_evidence"]
     assert len(evidence) == 6 and not data["routes"][0]["context"]["mapped_feature_evidence_truncated"]
