@@ -108,7 +108,10 @@ def tune_database() -> None:
                 wal_mb = conn.execute(text("SELECT (coalesce(sum(size), 0) / 1048576)::int FROM pg_ls_waldir()")).scalar()
             except Exception:
                 wal_mb = None
-            log.info("database_tuned", extra={"database_mb": db_mb, "wal_mb": wal_mb,
+            tables = conn.execute(text(
+                "SELECT relname, (pg_total_relation_size(relid) / 1048576)::int FROM pg_statio_user_tables "
+                "ORDER BY pg_total_relation_size(relid) DESC LIMIT 6")).all()
+            log.info("database_tuned", extra={"database_mb": db_mb, "wal_mb": wal_mb, "tables_mb": {t: mb for t, mb in tables},
                                                "max_wal_size": conn.execute(text("SHOW max_wal_size")).scalar()})
     except Exception as exc:  # pragma: no cover - depends on the database's permissions
         log.warning("database_tuning_skipped", extra={"error_type": type(exc).__name__, "error": str(exc)[:200]})
