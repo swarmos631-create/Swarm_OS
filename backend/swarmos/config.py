@@ -86,6 +86,7 @@ class Settings(BaseSettings):
     http_user_agent: str = "SwarmOS/0.1 (+https://github.com/swarmos631-create/Swarm_OS)"
     sync_enabled: bool = True
     sync_interval_minutes: int = Field(default=30, ge=5)
+    measurement_retention_days: int = Field(default=10, ge=2, le=365)
     sync_cities: CsvList = Field(default_factory=lambda: ["bengaluru", "mumbai", "delhi"])
 
     open_meteo_base_url: str = "https://api.open-meteo.com/v1/forecast"
@@ -101,7 +102,13 @@ class Settings(BaseSettings):
     ogd_cpcb_resource_id: str = "3b01bcb8-0b14-4abf-b6f2-c1bfd384ba69"
     imd_api_base_url: str | None = None  # IMD access is by arrangement; unset == unavailable
     # MapmyIndia (Mappls) static key — real facility locations via the Mappls nearby-places API.
-    mappls_api_key: str | None = Field(default=None, validation_alias=AliasChoices("SWARMOS_MAPPLS_API_KEY", "MAPPLS_API_KEY", "VITE_MAPPLS_KEY"))
+    # Server-side MapmyIndia credentials. The browser key (VITE_MAPPLS_KEY) is deliberately NOT used here: it is
+    # restricted to the website's domain, so Mappls rejects it from the server (HTTP 401).
+    mappls_api_key: str | None = Field(default=None, validation_alias=AliasChoices("SWARMOS_MAPPLS_API_KEY", "MAPPLS_API_KEY"))
+    mappls_client_id: str | None = None
+    tomtom_api_key: str | None = None  # TomTom developer key — live corridor speeds (free tier ~2,500 calls/day)
+    tomtom_points_per_city: int = Field(default=5, ge=1, le=12)
+    mappls_client_secret: str | None = None
     mappls_search_radius_m: int = Field(default=12000, ge=1000, le=50000)
 
     # Worker / orchestration
