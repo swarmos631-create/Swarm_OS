@@ -179,7 +179,7 @@ export function CommandCenter() {
                     <span className="xs faint">{ago(t.created_at)}</span>
                   </li>
                 ))}
-                {!d.agents.recent_tasks.length && <li className="small faint">No tasks yet — try the AI Workspace.</li>}
+                {!d.agents.recent_tasks.length && <li className="small faint">No questions yet — try the AI Assistant.</li>}
               </ul>
             </div>
           )}
