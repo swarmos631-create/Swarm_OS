@@ -1066,7 +1066,7 @@ class OpenAqStations(Adapter):
         cutoff = datetime.now(UTC) - timedelta(days=2)
         locations = []
         for loc in (data or {}).get("results") or []:
-            last = _parse_iso(((loc.get("datetimeLast") or {}).get("utc")))
+            last = _parse_iso((loc.get("datetimeLast") or {}).get("utc"))
             sensors = {s.get("id"): s for s in loc.get("sensors") or [] if
                        OPENAQ_PARAMS.get(str((s.get("parameter") or {}).get("name", "")).lower())}
             if last and last >= cutoff and sensors:
