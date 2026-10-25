@@ -30,6 +30,8 @@ ml/datasets/raw/*
 !ml/datasets/raw/.gitkeep
 ml/datasets/processed/*
 !ml/datasets/processed/.gitkeep
+# Real datasets downloaded at training time (e.g. the Kaggle air-quality mirror) are rebuilt on demand, not committed.
+ml/datasets/synthetic/kaggle_india_aq_v1/
 
 # OS / editor
 .DS_Store
