@@ -33,6 +33,24 @@ def feature_ref(layer: str, n: int, provenance: str, source_id: str) -> dict[str
     return {"type": "features", "layer": layer, "n": n, "provenance": provenance, "source_id": source_id}
 
 
+def layer_ref(layer: str, feats: Iterable[Any]) -> dict[str, Any]:
+    """Reference to the features of one layer, with provenance and source taken from the rows themselves."""
+    rows = [f for f in feats if f.layer == layer]
+    provs = sorted({f.provenance for f in rows}) or ["unavailable"]
+    sources = sorted({f.source_id for f in rows})
+    return {"type": "features", "layer": layer, "n": len(rows), "provenance": provs[0] if len(provs) == 1 else "mixed",
+            "source_id": sources[0] if len(sources) == 1 else ",".join(sources)}
+
+
+def source_phrase(feats: Iterable[Any]) -> str:
+    """'in OpenStreetMap' / 'by MapmyIndia' / '(simulated)' — so summaries never misstate where facilities came from."""
+    srcs = {f.source_id for f in feats}
+    if srcs and all(f.provenance == "demo" for f in feats):
+        return "(simulated locations)"
+    names = [n for sid, n in (("mappls-places", "MapmyIndia"), ("osm-overpass", "OpenStreetMap")) if sid in srcs]
+    return f"from {' + '.join(names)}" if names else "mapped"
+
+
 def records_ref(kind: str, n: int, provenances: Iterable[str]) -> dict[str, Any]:
     return {"type": "records", "kind": kind, "n": n, "provenance": sorted(set(provenances))}
 
