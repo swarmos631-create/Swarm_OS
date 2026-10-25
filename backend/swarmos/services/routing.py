@@ -72,7 +72,8 @@ def _distance_to_route_km(lat: float, lon: float, line: list[list[float]]) -> fl
 
 def _context(db: Session, city_id: str, geometry: list[list[float]]) -> dict[str, Any]:
     if not geometry:
-        return {"open_incident_points_within_250m": 0, "mapped_help_facilities_within_500m": {},
+        return {"open_incident_points_within_250m": 0, "incident_points_by_provenance_within_250m": {},
+                "mapped_help_facilities_within_500m": {},
                 "mapped_transit_stations_within_500m": {}, "facility_features_checked": 0,
                 "transit_features_checked": 0, "street_light_features_checked": 0,
                 "mapped_street_lamp_points_within_100m": 0,
@@ -101,7 +102,11 @@ def _context(db: Session, city_id: str, geometry: list[list[float]]) -> dict[str
     ).order_by(GeoFeature.id.asc()).limit(MAX_ROUTE_CONTEXT_FEATURES + 1)).all()
     feature_candidates_truncated = len(features) > MAX_ROUTE_CONTEXT_FEATURES
     features = features[:MAX_ROUTE_CONTEXT_FEATURES]
-    incidents_near = sum(1 for row in incidents if _near_route(row.lat, row.lon, geometry, INCIDENT_RADIUS_KM))
+    incident_rows_near = [row for row in incidents if _near_route(row.lat, row.lon, geometry, INCIDENT_RADIUS_KM)]
+    incident_provenance = Counter(
+        row.provenance if row.provenance in {"live", "cached", "demo", "operator", "public"} else "unknown"
+        for row in incident_rows_near
+    )
     near_with_distance = [(row, _distance_to_route_km(row.lat, row.lon, geometry)) for row in features]
     near_with_distance = [(row, distance) for row, distance in near_with_distance if distance <= CONTEXT_RADIUS_KM]
     near = [row for row, _distance in near_with_distance]
@@ -136,7 +141,8 @@ def _context(db: Session, city_id: str, geometry: list[list[float]]) -> dict[str
             "observed_at": row.observed_at.isoformat() if row.observed_at else None,
             "fetched_at": row.fetched_at.isoformat() if row.fetched_at else None,
         })
-    return {"open_incident_points_within_250m": incidents_near,
+    return {"open_incident_points_within_250m": len(incident_rows_near),
+            "incident_points_by_provenance_within_250m": dict(sorted(incident_provenance.items())),
             "mapped_help_facilities_within_500m": dict(sorted(facilities.items())),
             "mapped_transit_stations_within_500m": dict(sorted(transit.items())),
             "facility_features_checked": sum(1 for row in features if row.layer in HELP_LAYERS),

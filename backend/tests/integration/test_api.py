@@ -215,7 +215,7 @@ def test_public_citizen_intake_returns_private_reference_and_operator_triage(ope
 
 def test_sakhi_route_returns_real_route_shape_and_caveats_without_storage(client, monkeypatch):
     from swarmos.db import session_scope
-    from swarmos.models import GeoFeature
+    from swarmos.models import GeoFeature, Incident
     from swarmos.services import routing
 
     with session_scope() as db:
@@ -225,6 +225,10 @@ def test_sakhi_route_returns_real_route_shape_and_caveats_without_storage(client
         db.add(GeoFeature(city_id="bengaluru", source_id="osm-overpass", layer="street_light",
                           external_id="node/sakhi-route-lamp", name="Mapped street lamp",
                           lat=12.975, lon=77.595, properties={"lit": "yes"}, provenance="live"))
+        for provenance, source in (("live", "verified-feed"), ("public", "citizen-portal"), ("demo", "swarmos-demo")):
+            db.add(Incident(city_id="bengaluru", title=f"{provenance} route context", category="streetlight",
+                            severity="moderate", status="open", lat=12.975, lon=77.595,
+                            provenance=provenance, source=source))
         for idx, value in enumerate(("limited", "no", "designated", None)):
             db.add(GeoFeature(city_id="bengaluru", source_id="osm-overpass", layer="clinic",
                               external_id=f"test/wheelchair-{idx}", name="Mapped clinic",
@@ -249,6 +253,10 @@ def test_sakhi_route_returns_real_route_shape_and_caveats_without_storage(client
     assert len(data["routes"]) == 2
     assert data["routes"][0]["geometry"]["type"] == "LineString"
     assert "open_incident_points_within_250m" in data["routes"][0]["context"]
+    assert data["routes"][0]["context"]["open_incident_points_within_250m"] == 3
+    assert data["routes"][0]["context"]["incident_points_by_provenance_within_250m"] == {
+        "demo": 1, "live": 1, "public": 1,
+    }
     assert data["routes"][0]["context"]["mapped_transit_stations_within_500m"] == {"bus_station": 1}
     assert data["routes"][0]["context"]["transit_features_checked"] >= 1
     assert data["routes"][0]["context"]["street_light_features_checked"] >= 1

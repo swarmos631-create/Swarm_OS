@@ -180,6 +180,7 @@ test("SakhiRoute compares real-route response context and opens mapped evidence"
         geometry: { type: "LineString", coordinates: [[77.59, 12.97], [77.595, 12.975], [77.60, 12.98]] },
         context: {
           open_incident_points_within_250m: 1,
+          incident_points_by_provenance_within_250m: { live: 1 },
           mapped_help_facilities_within_500m: { clinic: 1 },
           mapped_transit_stations_within_500m: { bus_station: 1 },
           facility_features_checked: 1, transit_features_checked: 1,
@@ -207,6 +208,8 @@ test("SakhiRoute compares real-route response context and opens mapped evidence"
   await expect(page.getByText("Open incident points within 250 m:")).toBeVisible();
   const routeCard = page.locator("section.panel.panel-body").filter({ hasText: "Router's first choice" });
   await expect(routeCard).toContainText("Nearby mapped wheelchair tags:");
+  await expect(routeCard).toContainText("Record origin: live 1");
+  await expect(routeCard).toContainText("Origin is not verification");
   await expect(routeCard).toContainText("yes 1");
   await expect(routeCard).toContainText("Community-mapped street-lamp points within 100 m: 2");
   await page.getByText("Inspect mapped facility evidence (1+)").click();

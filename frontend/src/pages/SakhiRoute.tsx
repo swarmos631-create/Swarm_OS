@@ -16,6 +16,7 @@ interface RouteOption {
   geometry: { type: "LineString"; coordinates: [number, number][] };
   context: {
     open_incident_points_within_250m: number;
+    incident_points_by_provenance_within_250m?: Record<string, number>;
     mapped_help_facilities_within_500m: Record<string, number>;
     mapped_transit_stations_within_500m: Record<string, number>;
     facility_features_checked: number;
@@ -221,6 +222,7 @@ function RouteCard({ route, index }: { route: RouteOption; index: number }) {
   const transitCounts = route.context.mapped_transit_stations_within_500m ?? {};
   const transitCount = Object.values(transitCounts).reduce((sum, count) => sum + count, 0);
   const streetLampCount = route.context.mapped_street_lamp_points_within_100m ?? 0;
+  const incidentOrigins = route.context.incident_points_by_provenance_within_250m ?? {};
   const wheelchair = route.context.mapped_wheelchair_accessibility_within_500m ?? {};
   const mappedEvidence = route.context.mapped_feature_evidence ?? [];
   return <section className="panel panel-body" style={{ borderTop: "3px solid " + colors[index % colors.length] }}>
@@ -229,6 +231,8 @@ function RouteCard({ route, index }: { route: RouteOption; index: number }) {
     <div className="small muted">{fmtNum(route.distance_m / 1000)} km</div>
     <div className="stack" style={{ gap: 5, marginTop: 12 }}>
       <span className="small">Open incident points within 250 m: <b>{route.context.open_incident_points_within_250m}</b></span>
+      {Object.keys(incidentOrigins).length > 0 && <span className="xs faint">Record origin: {Object.entries(incidentOrigins).map(([origin, count]) => `${origin.replaceAll("_", " ")} ${count}`).join(" · ")}</span>}
+      <span className="xs faint">Origin is not verification: public and operator reports may be unverified, and simulated records are not observed incidents.</span>
       <span className="small">Mapped public-help facilities within 500 m: <b>{facilityCount}</b></span>
       {Object.entries(counts).map(([layer, count]) => <span key={layer} className="xs faint">{layer.replaceAll("_", " ")}: {count}</span>)}
       {!facilityCount && <span className="xs faint">No matching mapped features returned; this does not mean help is absent.</span>}
@@ -244,13 +248,13 @@ function RouteCard({ route, index }: { route: RouteOption; index: number }) {
         <summary>Inspect mapped facility evidence ({mappedEvidence.length}{route.context.mapped_feature_evidence_truncated ? "+" : ""})</summary>
         {mappedEvidence.length ? <ul className="stack" style={{ paddingLeft: 18, margin: "8px 0" }}>
           {mappedEvidence.map((item) => <li key={`${item.source_id}/${item.external_id}`}>
-            <b>{item.name || item.layer.replaceAll("_", " ")}</b> · {item.distance_to_sampled_route_m} m from sampled route · wheelchair: {item.wheelchair || "unknown"}<br />
+            <b>{item.name || item.layer.replaceAll("_", " ")}</b> · {item.distance_to_sampled_route_m} m from sampled route{item.layer !== "street_light" ? ` · wheelchair: ${item.wheelchair || "unknown"}` : ""}<br />
             <span className="xs faint">{item.source_id} · {item.provenance} · fetched {item.fetched_at ? new Date(item.fetched_at).toLocaleString() : "time unavailable"}</span><br />
             {item.source_id === "osm-overpass" && /^(node|way|relation)\/\d+$/.test(item.external_id)
               ? <a className="xs" href={`https://www.openstreetmap.org/${item.external_id}`} target="_blank" rel="noreferrer">Inspect OpenStreetMap feature ↗</a>
               : <code className="xs">{item.external_id}</code>}
           </li>)}
-        </ul> : <p className="xs faint">No mapped facility or transit records were found within the context radius.</p>}
+        </ul> : <p className="xs faint">No mapped facility, transit or street-lamp records were found within the context radius.</p>}
         {route.context.mapped_feature_evidence_truncated && <p className="xs faint">Evidence is capped at 25 nearest records; {route.context.context_truncated ? "the candidate scan also hit its cap, so counts and evidence may be incomplete." : "the counts above include all matching records in the context area."}</p>}
         {route.context.context_truncated && <p className="xs faint">The route context scan hit its record cap. Counts and evidence are incomplete lower bounds.</p>}
       </details>
