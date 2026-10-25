@@ -218,4 +218,7 @@ def city_access(city_id: str, principal: Principal = Depends(current_principal),
         raise ApiError(404, "unknown_city", f"Unknown city '{city_id}'")
     if not principal.can_access_city(city_id):
         raise forbidden("Your account is not authorised for this city")
+    from swarmos.demo.seed import ensure_city_data  # local import: seed depends on this module
+
+    ensure_city_data(db, get_settings(), city)
     return city
