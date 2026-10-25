@@ -70,7 +70,7 @@ export function CitySelector() {
                 </div>
                 <div className="row" style={{ gap: 4 }}>
                   {c.has_live_data && <span className="badge b-live" title="Live data has been synchronised">Live</span>}
-                  {c.has_demo_data && <span className="badge b-demo" title="Has synthetic demo fixtures">Demo</span>}
+                  {c.has_demo_data && <span className="badge b-demo" title="Uses simulated data where no live feed exists">Simulated</span>}
                 </div>
               </li>
             ))}
