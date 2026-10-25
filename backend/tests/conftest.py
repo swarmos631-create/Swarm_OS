@@ -38,6 +38,8 @@ PASSWORD = "TestPassw0rd-123"
 
 @pytest.fixture(scope="session", autouse=True)
 def database():
+    # Keep the suite offline: no water-mask tiles (bounding-box placement) and every upstream sync gets HTTP 503.
+    import httpx
     from alembic import command
 
     from swarmos.cli import _alembic_cfg
@@ -45,9 +47,10 @@ def database():
     from swarmos.db import reset_engine, session_scope
     from swarmos.demo import seed
     from swarmos.demo.seed import bootstrap
+    from swarmos.integrations import sync
 
-    # Keep the suite offline: no water-mask tiles, simulated points use bounding-box placement.
     seed.land_mask = lambda city, timeout=15.0: None  # type: ignore[assignment]
+    sync.http_client = lambda settings: httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(503)))  # type: ignore[assignment]
     get_settings.cache_clear()
     reset_engine()
     command.upgrade(_alembic_cfg(), "head")
