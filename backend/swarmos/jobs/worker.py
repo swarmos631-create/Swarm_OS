@@ -51,7 +51,14 @@ async def _train(payload: dict[str, Any], job_id: str) -> dict[str, Any]:
                                    actor_id=payload.get("actor_id"))
 
 
-HANDLERS: dict[str, Handler] = {"agent_task": _agent_task, "sync": _sync, "sync_city": _sync_city, "train_model": _train}
+async def _prune(payload: dict[str, Any], job_id: str) -> dict[str, Any]:
+    from swarmos.integrations.sync import prune_measurements
+
+    return {"deleted": await asyncio.to_thread(prune_measurements, get_settings().measurement_retention_days)}
+
+
+HANDLERS: dict[str, Handler] = {"agent_task": _agent_task, "sync": _sync, "sync_city": _sync_city, "train_model": _train,
+                                "prune": _prune}
 
 
 class Worker:
@@ -147,14 +154,18 @@ def schedule_periodic_syncs(settings: Any) -> int:
     with session_scope() as db:
         for city_id in settings.sync_cities:
             for sid, a in ADAPTERS.items():
-                if a.spec.scope == "city" and a.configured(settings)[0]:
+                if a.spec.scope == "city" and a.spec.scheduled and a.configured(settings)[0]:
                     queue.enqueue(db, "sync", {"source_id": sid, "city_id": city_id}, dedupe_key=f"sched:{sid}:{city_id}:{bucket}",
                                   priority=8, max_attempts=2)
                     n += 1
         for sid, a in ADAPTERS.items():
-            if a.spec.scope == "global" and a.configured(settings)[0]:
-                queue.enqueue(db, "sync", {"source_id": sid}, dedupe_key=f"sched:{sid}:global:{bucket}", priority=8, max_attempts=2)
+            if a.spec.scope in ("global", "batch") and a.spec.scheduled and a.configured(settings)[0]:
+                # Batch sources cover every city in one job; backups run after their primary (lower priority).
+                prio = 9 if a.spec.fallback_for else 8
+                queue.enqueue(db, "sync", {"source_id": sid}, dedupe_key=f"sched:{sid}:global:{bucket}", priority=prio, max_attempts=2)
                 n += 1
+        day = utcnow().strftime("%Y%m%d")
+        queue.enqueue(db, "prune", {}, dedupe_key=f"prune:{day}", priority=9, max_attempts=1)
     return n
 
 
