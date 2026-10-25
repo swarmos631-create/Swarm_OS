@@ -39,3 +39,9 @@ Set secrets in Render Environment, never in Git or Vercel's Vite-prefixed browse
 5. Leave demo mode off for operational production. Demo data exists for onboarding/testing and must not be used to fill a missing live feed.
 
 No-key feeds are subject to their own quotas and terms. Public map, routing and Overpass services are not a substitute for a contracted, self-hosted, or managed production service at high volume.
+
+## Route-specific data gaps
+
+SakhiRoute has no verified street-light operations feed. NDMC publicly describes individually controlled street lighting within its command-centre operations, but its public description does not provide a downloadable or documented consumer API; access would need to be arranged with the responsible agency. See the [NDMC command-centre description](https://smartcity.ndmc.gov.in/content/projects/project-details/integrated-command-and-control-center) and [NDMC street-light maintenance/GIS description](https://ndmc.gov.in/departments/it_achievements.aspx). OSM lamp points and tags remain community-mapped infrastructure evidence, not current condition or illumination observations.
+
+Delhi Open Transit Data is not connected. The official bus static GTFS portal reports stops, routes, trips and stop-times last updated June 20, 2024, and warns that stop times are rough estimates. Static downloads request purpose/user details and terms acceptance; DoT reserves permission rights. Real-time feeds require an authorized private key. Do not present this 2024 timetable as current service. See the [static-data page](https://otd.delhi.gov.in/data/static/), [GTFS documentation](https://otd.delhi.gov.in/documentation/), and [terms](https://otd.delhi.gov.in/terms).
