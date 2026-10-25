@@ -80,7 +80,7 @@ class AgentResult(BaseModel):
         if self.status in ("ok", "degraded") and self.confidence is None:
             raise ValueError("ok/degraded results must report confidence")
         self.provenance = sorted(set(self.provenance))
-        demo_note = "Includes SYNTHETIC demonstration data — not suitable for operational decisions."
+        demo_note = "Includes SIMULATED data (climate-calibrated, generated where no live feed exists) — not for operational decisions."
         if ("demo" in self.provenance or "synthetic" in self.provenance) and demo_note not in self.limitations:
             self.limitations.append(demo_note)
         return self
