@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from swarmos.ml import complaints, synthetic
+from swarmos.ml.features import aq_row
 
 PII_PATTERNS = {
     "indian_mobile": re.compile(r"(?<!\d)(?:\+91[\s-]?)?[6-9]\d{9}(?!\d)"),
@@ -24,6 +25,11 @@ SCHEMAS: dict[str, dict[str, Any]] = {
     "complaints": {"columns": {"text": "str", "category": "str", "template_id": "str"}, "allowed": {"category": list(complaints.CATEGORIES)},
                    "text_columns": ["text"]},
     "timeseries": {"columns": {"timestamp": "datetime", "value": "float"}, "ranges": {"value": (0, 1e7)}, "text_columns": []},
+    "aq_daily": {"columns": {"city": "str", "date": "str", "target_pm25": "float", "pm25_d0": "float", "pm25_d1": "float",
+                             "pm25_d2": "float", "pm10_d0": "float", "tmax_next": "float", "tmin_next": "float", "rain_next": "float",
+                             "wind_next": "float", "rh_next": "float", "lat": "float", "lon": "float"},
+                 "ranges": {"target_pm25": (0, 1500), "pm25_d0": (0, 1500), "tmax_next": (-40, 60), "rh_next": (0, 100)},
+                 "text_columns": []},
     "grid_telemetry": {"columns": {"timestamp": "datetime", "frequency_hz": "float", "voltage_pu": "float", "load_pct": "float",
                                    "demand_delta_pct": "float", "label": "int"},
                        "ranges": {"frequency_hz": (48.5, 51.5), "voltage_pu": (0.7, 1.3), "label": (0, 1)}, "text_columns": []},
@@ -35,7 +41,67 @@ GENERATORS = {
     "water_demand": lambda p: _ts(synthetic.water_demand, p),
     "corridor_speed": lambda p: _ts(synthetic.corridor_speed, p),
     "grid_telemetry": lambda p: _grid(p),
+    "kaggle_india_aq": lambda p: _kaggle_india_aq(p),
 }
+
+# Kaggle dataset "India Daily Weather & Air Quality" (akshaykarthickms007, CC BY 4.0), read from its official
+# Hugging Face mirror because Kaggle downloads require an account token.
+KAGGLE_AQ = {
+    "kaggle": "https://www.kaggle.com/datasets/akshaykarthickms007/india-daily-weather-and-air-quality",
+    "mirror": "https://huggingface.co/datasets/AkshayKarthick/india-weather-air-quality/resolve/main/",
+    "license": "CC BY 4.0 (Kaggle: akshaykarthickms007/india-daily-weather-and-air-quality)",
+}
+
+
+def _download_csv(url: str) -> list[dict[str, str]]:
+    import httpx
+
+    with httpx.Client(timeout=120, follow_redirects=True, headers={"User-Agent": "SwarmOS/0.1 (+ml training)"}) as client:
+        r = client.get(url)
+        r.raise_for_status()
+    return list(csv.DictReader(r.text.splitlines()))
+
+
+def _kaggle_india_aq(p: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    base = p.get("mirror", KAGGLE_AQ["mirror"])
+    aq = _download_csv(base + "air_quality_daily.csv")
+    wx = _download_csv(base + "weather_daily.csv")
+    coords = {r["city"]: (float(r["latitude"]), float(r["longitude"])) for r in _download_csv(base + "cities.csv")}
+    weather = {(r["city"], r["date"]): r for r in wx}
+    by_city: dict[str, dict[str, dict[str, str]]] = {}
+    for r in aq:
+        by_city.setdefault(r["city"], {})[r["date"]] = r
+    rows: list[dict[str, Any]] = []
+    for city, days in by_city.items():
+        if city not in coords:
+            continue
+        lat, lon = coords[city]
+        dates = sorted(days)
+        for i in range(2, len(dates) - 1):
+            d2, d1, d0, nxt = dates[i - 2], dates[i - 1], dates[i], dates[i + 1]
+            day = datetime.fromisoformat(d0)
+            if (datetime.fromisoformat(nxt) - day).days != 1 or (day - datetime.fromisoformat(d2)).days != 2:
+                continue
+            w = weather.get((city, nxt))
+            try:
+                pm = [float(days[d0]["pm2_5_mean"]), float(days[d1]["pm2_5_mean"]), float(days[d2]["pm2_5_mean"])]
+                target = float(days[nxt]["pm2_5_mean"])
+                pm10 = float(days[d0]["pm10_mean"])
+                if w is None:
+                    continue
+                wn = {"tmax": float(w["temperature_2m_max"]), "tmin": float(w["temperature_2m_min"]), "rain": float(w["precipitation_sum"]),
+                      "wind": float(w["wind_speed_10m_max"]), "rh": float(w["relative_humidity_2m_mean"])}
+            except (KeyError, ValueError):
+                continue
+            feats = aq_row(pm, pm10, wn, datetime.fromisoformat(nxt).timetuple().tm_yday, lat, lon)
+            rows.append({"city": city, "date": nxt, "target_pm25": target, "pm25_d0": feats[0], "pm25_d1": feats[1], "pm25_d2": feats[2],
+                         "pm10_d0": feats[3], "tmax_next": feats[4], "tmin_next": feats[5], "rain_next": feats[6], "wind_next": feats[7],
+                         "rh_next": feats[8], "lat": lat, "lon": lon})
+    rows.sort(key=lambda r: (r["date"], r["city"]))
+    meta = {"synthetic": False, "license": KAGGLE_AQ["license"],
+            "provenance": f"Real daily observations-derived data for {len(by_city)} Indian cities from Kaggle ({KAGGLE_AQ['kaggle']}), "
+                          f"downloaded from the dataset's Hugging Face mirror; joined and lagged by SwarmOS."}
+    return rows, meta
 
 
 def _start(p: dict[str, Any]) -> datetime:
@@ -66,7 +132,10 @@ class Dataset:
 
 
 def generate(datasets_dir: Path, name: str, generator: str, params: dict[str, Any], schema: str) -> Dataset:
-    rows = GENERATORS[generator](params)
+    produced = GENERATORS[generator](params)
+    rows, extra = produced if isinstance(produced, tuple) else (produced, {})
+    if not rows:
+        raise ValueError(f"Dataset generator '{generator}' produced no rows")
     out_dir = datasets_dir / "synthetic" / name
     out_dir.mkdir(parents=True, exist_ok=True)
     data_path = out_dir / "data.csv"
@@ -85,6 +154,7 @@ def generate(datasets_dir: Path, name: str, generator: str, params: dict[str, An
         "license": "CC0-1.0 (synthetic data generated by SwarmOS)",
         "provenance": "Generated deterministically by SwarmOS. Contains no real-world or personal data.",
         "created_at": datetime.now(UTC).isoformat(),
+        **extra,
     }
     (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
     return Dataset(data_path, manifest, rows)
