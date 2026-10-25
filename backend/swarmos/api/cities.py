@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from swarmos.agents.skills.common import NAQI_AVERAGING_H, mean, naqi
 from swarmos.api.common import iso
+from swarmos.config import get_settings
 from swarmos.core.errors import bad_request
 from swarmos.core.security import Principal, city_access, current_principal
 from swarmos.db import get_db, utcnow
@@ -48,7 +49,8 @@ def list_cities(q: str | None = Query(None, max_length=80), principal: Principal
         ql = q.strip().lower()
         cities = [c for c in cities if ql in c.name.lower() or ql in c.state.lower() or any(ql in a.lower() for a in c.aliases)]
     live = set(db.scalars(select(Measurement.city_id).where(Measurement.provenance == "live").distinct()))
-    return {"items": [city_dict(c, {"has_live_data": c.id in live, "has_demo_data": c.is_pilot}) for c in cities], "total": len(cities)}
+    settings = get_settings()
+    return {"items": [city_dict(c, {"has_live_data": c.id in live, "has_demo_data": settings.demo_mode and (c.is_pilot or settings.simulate_all_cities)}) for c in cities], "total": len(cities)}
 
 
 @router.get("/cities/{city_id}")
@@ -187,7 +189,7 @@ LAYER_META = {
     "clinic": ("Clinics", "health"), "fire_station": ("Fire stations", "safety"), "police": ("Police", "safety"),
     "school": ("Schools", "community"), "bus_station": ("Bus stations", "mobility"), "rail_station": ("Rail stations", "mobility"),
     "water_tower": ("Water towers", "water"), "substation": ("Substations", "energy"), "public_toilet": ("Public toilets", "community"),
-    "asset_bridge": ("Flyovers/bridges (demo)", "infrastructure"), "asset_road": ("Road segments (demo)", "infrastructure"),
+    "asset_bridge": ("Flyovers/bridges", "infrastructure"), "asset_road": ("Road segments", "infrastructure"),
     "traffic_sensors": ("Traffic corridors", "mobility"), "water_sensors": ("Water telemetry", "water"),
 }
 
