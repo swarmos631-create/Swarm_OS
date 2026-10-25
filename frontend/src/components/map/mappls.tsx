@@ -28,7 +28,21 @@ export function loadMappls(): Promise<any> {
       else setTimeout(poll, 100);
     };
     s.onload = poll;
-    s.onerror = () => reject(new Error("MapmyIndia SDK could not be downloaded"));
+    s.onerror = () => {
+      // The SDK answers errors as JSON (e.g. 401 "IP/Domain validation failed"); read it to explain the failure.
+      fetch(s.src)
+        .then((r) => r.json())
+        .then((j: { error_code?: string; error_description?: string }) => {
+          if (j.error_code === "ASSET_ACCESS_DENIED" || /domain/i.test(j.error_description ?? "")) {
+            reject(new Error(`MapmyIndia rejected this website — add ${window.location.host} to the key's allowed domains in the Mappls console`));
+          } else if (/token|credential/i.test(`${j.error_code} ${j.error_description}`)) {
+            reject(new Error("MapmyIndia did not recognise the key in VITE_MAPPLS_KEY (use the project's static key)"));
+          } else {
+            reject(new Error(`MapmyIndia SDK error: ${j.error_description ?? j.error_code ?? "unknown"}`));
+          }
+        })
+        .catch(() => reject(new Error("MapmyIndia SDK could not be downloaded")));
+    };
     document.head.appendChild(s);
   }).catch((e) => {
     loading = null;
@@ -175,7 +189,7 @@ export function MapplsCanvas({ center, zoom, points, mode3d, theme, onSelect, on
 export type BaseMap = "mappls" | "osm";
 
 /** Chosen base map: MapmyIndia when a key is configured (remembered per device), otherwise OpenFreeMap. */
-export function useBaseMap(): [BaseMap, (b: BaseMap) => void] {
+export function useBaseMap(): [BaseMap, (b: BaseMap) => void, (b: BaseMap) => void] {
   const [base, setBase] = useState<BaseMap>(() => {
     if (!hasMappls) return "osm";
     try {
@@ -188,7 +202,8 @@ export function useBaseMap(): [BaseMap, (b: BaseMap) => void] {
     setBase(b);
     try { localStorage.setItem("swarmos.basemap", b); } catch { /* not persisted */ }
   };
-  return [base, set];
+  // An automatic fallback (SDK failed) is not remembered, so MapmyIndia is retried on the next visit.
+  return [base, set, setBase];
 }
 
 /** "MapmyIndia | OpenFreeMap" toggle; hidden when no Mappls key is configured. */
