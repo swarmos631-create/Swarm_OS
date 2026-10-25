@@ -27,6 +27,7 @@ from swarmos.ml import datasets
 from swarmos.ml.complaints import KeywordLexiconFeatures, rule_classify
 from swarmos.ml.features import (
     ANOMALY_FEATURES,
+    AQ_FEATURES,
     FORECAST_FEATURES,
     anomaly_features,
     forecast_row,
@@ -193,6 +194,16 @@ def train_forecaster(rows: list[dict[str, Any]], cfg: dict[str, Any]) -> dict[st
     }
 
 
+class SupervisedAnomaly:
+    """Wraps a binary classifier so it answers like IsolationForest: -1 = anomaly, 1 = normal."""
+
+    def __init__(self, clf: Any) -> None:
+        self.clf = clf
+
+    def predict(self, X: Any) -> np.ndarray:
+        return np.where(self.clf.predict(np.asarray(X)) == 1, -1, 1)
+
+
 def train_anomaly_detector(rows: list[dict[str, Any]], cfg: dict[str, Any]) -> dict[str, Any]:
     from sklearn.ensemble import IsolationForest
     from sklearn.metrics import precision_recall_fscore_support
@@ -205,9 +216,19 @@ def train_anomaly_detector(rows: list[dict[str, Any]], cfg: dict[str, Any]) -> d
     cut = int(n * (1 - split["test"]))
     X_tr, X_te, y_te = X[:cut], X[cut:], y[cut:]
     hp = cfg["hyperparams"]
-    est = IsolationForest(n_estimators=int(hp.get("n_estimators", 200)), contamination=float(hp.get("contamination", 0.03)),
-                          random_state=split["seed"])
-    est.fit(X_tr[y[:cut] == 0] if hp.get("train_on_normal_only", True) else X_tr)
+    est: Any
+    if hp.get("supervised"):
+        from sklearn.ensemble import HistGradientBoostingClassifier
+
+        clf = HistGradientBoostingClassifier(max_iter=int(hp.get("max_iter", 200)), learning_rate=float(hp.get("learning_rate", 0.1)),
+                                             min_samples_leaf=int(hp.get("min_samples_leaf", 5)), class_weight="balanced",
+                                             random_state=split["seed"])
+        clf.fit(X_tr, y[:cut])
+        est = SupervisedAnomaly(clf)
+    else:
+        est = IsolationForest(n_estimators=int(hp.get("n_estimators", 200)), contamination=float(hp.get("contamination", 0.03)),
+                              random_state=split["seed"])
+        est.fit(X_tr[y[:cut] == 0] if hp.get("train_on_normal_only", True) else X_tr)
     pred = (est.predict(X_te) == -1).astype(int)
     p, r, f, _ = precision_recall_fscore_support(y_te, pred, average="binary", zero_division=0)
     # baseline: fixed engineering bands
@@ -222,7 +243,46 @@ def train_anomaly_detector(rows: list[dict[str, Any]], cfg: dict[str, Any]) -> d
     }
 
 
-TRAINERS = {"text_classification": train_text_classifier, "forecasting": train_forecaster, "anomaly_detection": train_anomaly_detector}
+def train_aq_forecaster(rows: list[dict[str, Any]], cfg: dict[str, Any]) -> dict[str, Any]:
+    """Next-day PM2.5 from the last three days, tomorrow's weather and location; time-based split by date."""
+    from sklearn.ensemble import HistGradientBoostingRegressor
+    from sklearn.metrics import mean_absolute_error
+
+    cols = ["pm25_d0", "pm25_d1", "pm25_d2", "pm10_d0", "tmax_next", "tmin_next", "rain_next", "wind_next", "rh_next"]
+    dates = sorted({r["date"] for r in rows})
+    split = cfg["split"]
+    test_from = dates[-int(split["test_days"])] if len(dates) > split["test_days"] else dates[-1]
+    val_from = dates[-int(split["test_days"]) - int(split["val_days"])]
+
+    def feats(r: dict[str, Any]) -> list[float]:
+        doy = datetime.fromisoformat(r["date"]).timetuple().tm_yday
+        base = [float(r[c]) for c in cols]
+        import math as _m
+        return [*base, _m.sin(2 * _m.pi * doy / 366), _m.cos(2 * _m.pi * doy / 366), float(r["lat"]), float(r["lon"])]
+
+    tr = [r for r in rows if r["date"] < val_from]
+    va = [r for r in rows if val_from <= r["date"] < test_from]
+    te = [r for r in rows if r["date"] >= test_from]
+    hp = cfg["hyperparams"]
+    est = HistGradientBoostingRegressor(max_iter=int(hp.get("max_iter", 400)), learning_rate=float(hp.get("learning_rate", 0.05)),
+                                        max_leaf_nodes=int(hp.get("max_leaf_nodes", 31)), random_state=split["seed"])
+    est.fit(np.array([feats(r) for r in tr]), np.array([float(r["target_pm25"]) for r in tr]))
+    yt = np.array([float(r["target_pm25"]) for r in te])
+    pred = est.predict(np.array([feats(r) for r in te]))
+    persistence = np.array([float(r["pm25_d0"]) for r in te])
+    yv = np.array([float(r["target_pm25"]) for r in va])
+    return {
+        "estimator": est,
+        "feature_spec": {"features": list(AQ_FEATURES), "horizon": "next day (daily mean)", "target_unit": "µg/m³"},
+        "metrics": {"mae": round(float(mean_absolute_error(yt, pred)), 3),
+                    "val_mae": round(float(mean_absolute_error(yv, est.predict(np.array([feats(r) for r in va])))), 3) if va else None},
+        "baseline": {"name": "persistence (today = tomorrow)", "mae": round(float(mean_absolute_error(yt, persistence)), 3)},
+        "split_sizes": {"train": len(tr), "val": len(va), "test": len(te), "cities": len({r["city"] for r in rows})},
+    }
+
+
+TRAINERS = {"text_classification": train_text_classifier, "forecasting": train_forecaster, "anomaly_detection": train_anomaly_detector,
+            "aq_forecasting": train_aq_forecaster}
 
 
 def evaluate_gate(cfg: dict[str, Any], metrics: dict[str, Any], baseline: dict[str, Any]) -> tuple[bool, str]:
