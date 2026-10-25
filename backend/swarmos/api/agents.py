@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -16,7 +16,8 @@ from swarmos.agents.registry import AGENTS, REGISTRY
 from swarmos.api.common import PageParams, iso, page_params, paginate
 from swarmos.api.outcomes import outcome_dict
 from swarmos.config import get_settings
-from swarmos.core.errors import bad_request, not_found
+from swarmos.core.audit import audit
+from swarmos.core.errors import bad_request, conflict, not_found
 from swarmos.core.ratelimit import limiter
 from swarmos.core.security import Principal, city_access, current_principal, require_role
 from swarmos.db import get_db, utcnow
@@ -400,6 +401,26 @@ class DecisionIn(BaseModel):
     note: str | None = Field(default=None, max_length=1000)
 
 
+class ManualExecutionIn(BaseModel):
+    executed_at: datetime | None = None
+    note: str = Field(min_length=12, max_length=1000)
+
+    @field_validator("executed_at")
+    @classmethod
+    def _timezone_required(cls, value: datetime | None) -> datetime | None:
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("executed_at must include a timezone")
+        return value
+
+    @field_validator("note")
+    @classmethod
+    def _meaningful_note(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 12:
+            raise ValueError("note must contain at least 12 non-space characters")
+        return value
+
+
 @router.post("/cities/{city_id}/actions/{action_id}/decision")
 def decide(action_id: str, body: DecisionIn, city: City = Depends(city_access), principal: Principal = Depends(require_role("operator")),
            db: Session = Depends(get_db)) -> dict[str, Any]:
@@ -407,3 +428,33 @@ def decide(action_id: str, body: DecisionIn, city: City = Depends(city_access), 
     if a is None or a.city_id != city.id:
         raise not_found("Action")
     return action_dict(decide_action(db, principal, a, body.approve, body.note))
+
+
+@router.post("/cities/{city_id}/actions/{action_id}/manual-execution")
+def record_manual_execution(action_id: str, body: ManualExecutionIn, city: City = Depends(city_access),
+                            principal: Principal = Depends(require_role("operator")),
+                            db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Record an operator declaration that an approved manual action was completed; never runs the action."""
+    action = db.get(ProposedAction, action_id)
+    if action is None or action.city_id != city.id:
+        raise not_found("Action")
+    if action.status != "awaiting_manual":
+        raise conflict("Only actions approved for manual execution can be marked manually executed")
+    now = utcnow()
+    executed_at = body.executed_at.astimezone(now.tzinfo) if body.executed_at else now
+    if executed_at > now + timedelta(seconds=30):
+        raise bad_request("Manual execution time cannot be in the future")
+    if action.decided_at and executed_at < action.decided_at:
+        raise bad_request("Manual execution time cannot be before the approval time")
+    action.status = "executed"
+    action.executed_at = executed_at
+    action.execution_result = {
+        "method": "operator_reported_manual",
+        "note": body.note,
+        "reported_at": iso(now),
+    }
+    db.flush()
+    audit(db, "action.manual_execution_reported", principal, target_type="proposed_action",
+          target_id=action.id, city_id=city.id,
+          details={"method": "operator_reported_manual", "executed_at": iso(executed_at)})
+    return action_dict(action)

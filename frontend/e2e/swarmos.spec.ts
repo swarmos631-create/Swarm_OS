@@ -94,6 +94,59 @@ test("submit an AI task, observe execution and review proposed actions", async (
   await expect(page.getByText(/Action (executed|awaiting manual)/)).toBeVisible();
 });
 
+test("operator can record an approved manual action and its execution time", async ({ page }) => {
+  const taskId = "manual-learning-task";
+  const actionId = "manual-learning-action";
+  let manuallyExecuted = false;
+  const action = () => ({
+    id: actionId, task_id: taskId, city_id: "bengaluru", agent_id: "mobility_optimization_agent",
+    agent_name: "Mobility Optimization Agent", kind: "manual", title: "Inspect the signal cabinet",
+    rationale: "A field inspection requires an operator.", payload: {}, risk: "low", required_role: "operator",
+    status: manuallyExecuted ? "executed" : "awaiting_manual", created_at: "2026-10-25T10:00:00Z",
+    decided_by: "operator", decided_at: "2026-10-25T10:05:00Z", decision_note: "Approved for manual work.",
+    executed_at: manuallyExecuted ? "2026-10-25T11:00:00Z" : null,
+    execution_result: manuallyExecuted ? { method: "operator_reported_manual", note: "Field team confirmed the cabinet inspection." } : { note: "Approved for execution by the responsible department." },
+    outcome: null,
+  });
+  await page.route(/\/api\/v1\/cities\/bengaluru\/tasks(?:\/[^?]*)?(?:\?.*)?$/, async (route) => {
+    const url = new URL(route.request().url());
+    const path = url.pathname;
+    if (path === `/api/v1/cities/bengaluru/tasks/${taskId}`) {
+      await route.fulfill({ json: {
+        id: taskId, city_id: "bengaluru", prompt: "Review approved field operation", status: "succeeded",
+        created_at: "2026-10-25T10:00:00Z", started_at: "2026-10-25T10:00:00Z", finished_at: "2026-10-25T10:01:00Z",
+        cancel_requested: false, agent_count: 0, error: null, summary: "Manual field inspection recommended.",
+        plan: { agents: [], edges: [], stages: [] }, params: {}, result: null, executions: [], handoffs: [], actions: [action()],
+      } });
+    } else if (path === "/api/v1/cities/bengaluru/tasks") {
+      await route.fulfill({ json: {
+        items: [{ id: taskId, city_id: "bengaluru", prompt: "Review approved field operation", status: "succeeded",
+          created_at: "2026-10-25T10:00:00Z", started_at: "2026-10-25T10:00:00Z", finished_at: "2026-10-25T10:01:00Z",
+          cancel_requested: false, agent_count: 0, error: null, summary: "Manual field inspection recommended." }],
+        total: 1, limit: 50, offset: 0,
+      } });
+    } else {
+      await route.continue();
+    }
+  });
+  await page.route(/\/api\/v1\/cities\/bengaluru\/actions\/manual-learning-action\/manual-execution$/, async (route) => {
+    expect(route.request().method()).toBe("POST");
+    const body = route.request().postDataJSON() as { note: string };
+    expect(body.note).toContain("Field team confirmed");
+    manuallyExecuted = true;
+    await route.fulfill({ json: action() });
+  });
+  await login(page, "operator@swarmos.local", "/c/bengaluru/mission-control");
+  const taskRow = page.getByRole("row").filter({ hasText: taskId });
+  await taskRow.getByRole("button", { name: "Inspect" }).click();
+  await expect(page.getByText("Record manual execution")).toBeVisible();
+  await expect(page.getByText(/SwarmOS does not contact or operate field systems/)).toBeVisible();
+  await page.getByLabel("Execution note").fill("Field team confirmed the cabinet inspection.");
+  await page.getByRole("button", { name: "Mark manually executed" }).click();
+  await expect(page.getByText(/Operator-reported manual execution at/)).toBeVisible();
+  await expect(page.getByText("Observed outcome")).toBeVisible();
+});
+
 test("integrations show honest connection states", async ({ page }) => {
   await login(page, "admin@swarmos.local", "/c/bengaluru/integrations");
   await expect(page.getByRole("row", { name: /CPCB real-time air quality/ })).toContainText("Awaiting Credentials");

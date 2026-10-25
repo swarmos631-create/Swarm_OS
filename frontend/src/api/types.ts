@@ -232,6 +232,7 @@ export interface ProposedAction {
   decided_by: string | null;
   decided_at: string | null;
   decision_note: string | null;
+  executed_at: string | null;
   execution_result: Record<string, unknown> | null;
   outcome?: InterventionOutcome | null;
 }

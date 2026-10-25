@@ -31,10 +31,14 @@ Snapshots retain the generated timestamp and reporting-window note, indicators, 
   * Auth: operator or admin; action must be executed or awaiting manual execution; city-scoped; CSRF required.
   * Body: {"outcome":"improved|unchanged|worsened|unverified","note":"...","measurement_ids":[123]}.
   * Measurement references must belong to the city, be observations, and not be marked demo or synthetic. Re-recording updates the current operator report; each write is audited.
+* POST /cities/{city_id}/actions/{action_id}/manual-execution
+  * Auth: operator or admin; action must be approved with `awaiting_manual` status; city-scoped; CSRF required.
+  * Body: `{"executed_at":"2026-10-25T12:00:00+05:30","note":"..."}`. The timestamp is optional and defaults to the server's current time; a supplied timestamp must include a timezone and cannot precede approval or be in the future.
+  * Records an operator-reported completion and an audit event; it does not perform or independently verify the manual action. The recorded timestamp becomes the before/after comparison boundary.
 * GET /cities/{city_id}/actions/{action_id}/outcome
   * Any authenticated user with city access; cross-city action IDs return 404.
 
-Outcome responses include the linked observation source, entity and timestamps. For executed actions with a recorded `executed_at`, `observed_changes` pairs the nearest linked measurements before and after execution, matching metric, unit, entity and source. Each pair includes the two measurement IDs, values, timestamps, absolute change and relative change when the before value is nonzero. The response also includes `comparison_boundary`, `change_comparison_status` and a plain-language `comparison_method`. Manual actions or executed actions without a timestamp do not get a before/after comparison. These operator-reported associations and descriptive changes do not prove causality or estimate intervention effectiveness.
+Outcome responses include the linked observation source, entity and timestamps. For executed actions with a recorded `executed_at`, `observed_changes` pairs the nearest linked measurements before and after execution, matching metric, unit, entity and source. Each pair includes the two measurement IDs, values, timestamps, absolute change and relative change when the before value is nonzero. The response also includes `comparison_boundary`, `change_comparison_status` and a plain-language `comparison_method`. Manual actions can obtain an execution boundary through the audited operator-reported endpoint above. These operator-reported associations and descriptive changes do not prove causality or estimate intervention effectiveness.
 
 ## Forecast evaluation
 

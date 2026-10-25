@@ -260,6 +260,11 @@ function RunDetails({ cityId, taskId, onClose }: { cityId: string; taskId: strin
               <div className="row wrap">{(evidence?.provenance ?? []).map((p) => <ProvenanceBadge key={p} p={p} />)}</div>
               {!!evidence?.limitations?.length && <span className="xs faint">Evidence limitations: {evidence.limitations.join(" · ")}</span>}
               {evidence?.data_refs?.length ? <details><summary className="xs">Evidence references ({evidence.data_refs.length})</summary><pre className="json">{JSON.stringify(evidence.data_refs, null, 2)}</pre></details> : null}
+              {action.status === "executed" && action.execution_result?.method === "operator_reported_manual" && <div className="notice info">
+                Operator-reported manual execution at {action.executed_at ? fmtTime(action.executed_at) : "time unavailable"}. SwarmOS did not perform or independently verify the field action.
+                {typeof action.execution_result.note === "string" && <div className="small">{action.execution_result.note}</div>}
+              </div>}
+              {action.status === "awaiting_manual" && can("operator") && <ManualExecutionEditor cityId={cityId} taskId={taskId} actionId={action.id} />}
               {(action.status === "executed" || action.status === "awaiting_manual") && can("operator") &&
                 <OutcomeEditor cityId={cityId} taskId={taskId} actionId={action.id} outcome={action.outcome ?? null} />}
               {action.status === "pending" && can("operator") && <div className="row">
@@ -330,6 +335,38 @@ function OutcomeEditor({ cityId, taskId, actionId, outcome }: { cityId: string; 
     <div className="row between"><span className="xs faint">Outcome notes are operator-reported. Linked observations add context but do not prove causality.</span>
       <button className="btn sm primary" disabled={!online || save.isPending || note.trim().length < 12} onClick={() => save.mutate()}>{outcome ? "Update outcome" : "Save outcome"}</button>
     </div>
+  </div>;
+}
+
+function ManualExecutionEditor({ cityId, taskId, actionId }: { cityId: string; taskId: string; actionId: string }) {
+  const [executedAt, setExecutedAt] = useState("");
+  const [note, setNote] = useState("");
+  const online = useOnline();
+  const toast = useToast();
+  const qc = useQueryClient();
+  const save = useMutation({
+    mutationFn: () => api<ProposedAction>(`/cities/${cityId}/actions/${actionId}/manual-execution`, {
+      method: "POST",
+      body: { executed_at: executedAt ? new Date(executedAt).toISOString() : undefined, note },
+    }),
+    onSuccess: () => {
+      toast("ok", "Manual execution recorded");
+      void qc.invalidateQueries({ queryKey: ["task", cityId, taskId] });
+      void qc.invalidateQueries({ queryKey: ["mission-control", cityId] });
+      void qc.invalidateQueries({ queryKey: ["recommendation-review", cityId] });
+    },
+    onError: () => toast("err", "Manual execution could not be recorded"),
+  });
+  return <div className="stack" style={{ border: "1px solid var(--line)", borderRadius: 8, padding: 10 }}>
+    <b className="small">Record manual execution</b>
+    <span className="xs faint">This records an operator declaration only. SwarmOS does not contact or operate field systems. The time is used as the before/after measurement boundary.</span>
+    <label className="small">Actual completion time (optional; blank uses current time)
+      <input className="input" type="datetime-local" value={executedAt} onChange={(event) => setExecutedAt(event.target.value)} />
+    </label>
+    <label className="small">Execution note<textarea className="input" rows={2} maxLength={1000} value={note} onChange={(event) => setNote(event.target.value)} placeholder="What was completed, and how do you know?" /></label>
+    <button className="btn sm primary" disabled={!online || save.isPending || note.trim().length < 12} onClick={() => save.mutate()}>
+      {save.isPending ? "Recording…" : "Mark manually executed"}
+    </button>
   </div>;
 }
 

@@ -502,6 +502,63 @@ def test_intervention_outcome_pairs_only_comparable_observations(operator):
     assert "does not estimate causal impact" in data["comparison_method"]
 
 
+def test_manual_execution_report_sets_audited_outcome_comparison_boundary(operator):
+    from datetime import timedelta
+
+    from sqlalchemy import select
+
+    from swarmos.db import session_scope, utcnow
+    from swarmos.models import AuditLog, Measurement, ProposedAction
+
+    now = utcnow()
+    execution_at = now - timedelta(hours=2)
+    with session_scope() as db:
+        action = ProposedAction(city_id="bengaluru", agent_id="mobility_optimization_agent", kind="manual",
+                                title="Inspect the signal cabinet", status="awaiting_manual",
+                                decided_at=now - timedelta(days=1))
+        db.add(action)
+        db.flush()
+        action_id = action.id
+        before = Measurement(city_id="bengaluru", source_id="open-meteo-weather", category="mobility",
+                             metric="manual_execution_test_flow", entity="corridor-a", value=12, unit="vehicles/min",
+                             kind="observation", observed_at=execution_at - timedelta(hours=1), provenance="live", meta={})
+        after = Measurement(city_id="bengaluru", source_id="open-meteo-weather", category="mobility",
+                            metric="manual_execution_test_flow", entity="corridor-a", value=10, unit="vehicles/min",
+                            kind="observation", observed_at=execution_at + timedelta(hours=1), provenance="live", meta={})
+        db.add_all([before, after])
+        db.flush()
+        measurement_ids = [before.id, after.id]
+
+    url = f"/api/v1/cities/bengaluru/actions/{action_id}/manual-execution"
+    note = "Department confirmed completion of the field work."
+    future = operator.post(url, json={"executed_at": (now + timedelta(hours=1)).isoformat(), "note": note})
+    assert future.status_code == 400
+    wrong_city = operator.post(f"/api/v1/cities/delhi/actions/{action_id}/manual-execution", json={"note": note})
+    assert wrong_city.status_code == 404
+    naive = operator.post(url, json={"executed_at": execution_at.replace(tzinfo=None).isoformat(), "note": note})
+    assert naive.status_code == 422
+
+    recorded = operator.post(url, json={"executed_at": execution_at.isoformat(), "note": note})
+    assert recorded.status_code == 200, recorded.text
+    assert recorded.json()["status"] == "executed"
+    assert recorded.json()["execution_result"]["method"] == "operator_reported_manual"
+    assert recorded.json()["executed_at"] == execution_at.isoformat()
+    with session_scope() as db:
+        audit_row = db.scalar(select(AuditLog).where(
+            AuditLog.action == "action.manual_execution_reported", AuditLog.target_id == action_id,
+        ))
+        assert audit_row is not None
+
+    outcome = operator.put(f"/api/v1/cities/bengaluru/actions/{action_id}/outcome", json={
+        "outcome": "unverified", "note": "Follow-up is recorded, but impact is not verified.",
+        "measurement_ids": measurement_ids,
+    })
+    assert outcome.status_code == 200, outcome.text
+    assert outcome.json()["comparison_boundary"] == execution_at.isoformat()
+    change = outcome.json()["observed_changes"][0]
+    assert change["before"]["value"] == 12 and change["after"]["value"] == 10
+
+
 def test_action_evidence_resolves_redacted_city_scoped_service_request(operator):
     from swarmos.db import session_scope
     from swarmos.models import ProposedAction, ServiceRequest
