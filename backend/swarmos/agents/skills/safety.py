@@ -148,12 +148,21 @@ def disaster_impact(ctx: AgentContext) -> AgentResult:
         findings.append(finding("Very heavy rainfall hazard", f"{weather.metrics['rain_24h_mm']} mm forecast in 24 h.", "high"))
     if flood and flood.metrics.get("level") in ("elevated", "severe"):
         hazards.append({"type": "flooding", "index": flood.metrics.get("score")})
-    prov = {"live"} if quakes else set()
+    # Official alerts (NDMA SACHET, GDACS) synchronised as live incidents for this city.
+    alerts = [i for i in ctx.data.incidents(days=3) if i.provenance == "live" and ":" in (i.source or "")]
+    for a in alerts[:10]:
+        hazards.append({"type": "official_alert", "category": a.category, "severity": a.severity, "title": a.title,
+                        "source": a.source.split(":", 1)[0], "at": a.reported_at.isoformat() if a.reported_at else None})
+        if a.severity in ("high", "critical"):
+            findings.append(finding(a.title, a.description[:300], a.severity, a.lat, a.lon))
+    prov = {"live"} if quakes or alerts else set()
     prov |= set(weather.provenance) if weather else set()
-    if not quakes and not weather and not flood:
+    if not quakes and not weather and not flood and not alerts:
         return unavailable(["seismic feed or weather hazard assessment"], "No hazard data available for impact analysis.")
-    return ok(f"{len(hazards)} hazard signal(s); {len(findings)} significant.", confidence=0.6, method="rules:hazard_screening",
-              findings=findings, metrics={"hazards": hazards, "earthquakes_7d_500km": len(quakes)}, provenance=prov,
+    lead = f"{len(alerts)} official alert(s) in force. " if alerts else ""
+    return ok(f"{lead}{len(hazards)} hazard signal(s); {len(findings)} significant.", confidence=0.6, method="rules:hazard_screening",
+              findings=findings, metrics={"hazards": hazards, "earthquakes_7d_500km": len(quakes), "official_alerts": len(alerts)},
+              provenance=prov,
               extra_refs=[feature_ref("earthquake", len(quakes), "live", "usgs-earthquakes")],
               limitations=["Screening only — no exposure/vulnerability model (buildings, population) is applied."])
 
