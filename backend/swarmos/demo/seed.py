@@ -315,8 +315,8 @@ def _latest_demo(db: Session, city: City) -> datetime | None:
 def ensure_city_data(db: Session, settings: Settings, city: City) -> None:
     """Make sure a city has simulated data that reaches the current hour.
 
-    No data yet: generated synchronously (the first visit to a city takes a few seconds). Stale by more than two
-    hours: refreshed in a background thread so the request is not held up. Checks are throttled per city.
+    No data yet: generated synchronously (the first visit to a city takes a few seconds). Behind the current hour:
+    refreshed in a background thread so the request is not held up. Checks are throttled per city.
     """
     clock = time.monotonic()
     if clock - _checked.get(city.id, -1e9) < 60:
@@ -335,8 +335,8 @@ def ensure_city_data(db: Session, settings: Settings, city: City) -> None:
         return
     if latest is not None:
         latest = latest if latest.tzinfo else latest.replace(tzinfo=now.tzinfo)
-        if now - latest <= timedelta(hours=2):
-            return
+        if now - latest < timedelta(hours=1):
+            return  # forecasting agents need history up to the current hour
     if latest is None:
         with lock:
             if _latest_demo(db, city) is None:
