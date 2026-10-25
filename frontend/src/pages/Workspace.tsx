@@ -1,10 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { api, ApiError, newIdempotencyKey } from "../api/client";
-import type { Execution, Page, Plan, ProposedAction, TaskDetail, TaskSummary } from "../api/types";
-import { ConfirmDialog, Drawer, EmptyState, ErrorState, Field, LoadingBlock, Panel, ProvenanceBadge, SeverityBadge, StatusBadge } from "../components/ui";
+import type { ChatReply, Execution, Page, ProposedAction, TaskDetail, TaskSummary } from "../api/types";
+import { ConfirmDialog, Drawer, ErrorState, Field, LoadingBlock, Panel, ProvenanceBadge, SeverityBadge, StatusBadge } from "../components/ui";
 import { ago, fmtTime, pct, titleCase } from "../lib/format";
 import { Icon } from "../lib/icons";
 import { useCity } from "../state/city";
@@ -13,98 +13,117 @@ import { useOnline, useToast } from "../state/ui";
 
 const EXAMPLES = [
   "Give me a city situation overview",
-  "Is there flooding risk in the next 72 hours and which drains need attention?",
+  "Will it rain in the next 24 hours?",
   "How is air quality and heat stress today?",
-  "Check water quality, leaks and grid anomalies",
-  "What if 80 mm of extra rain falls tomorrow?",
+  "Are there any official disaster alerts?",
   "Which open incidents need dispatch and where are the nearest facilities?",
+  "What if 80 mm of extra rain falls tomorrow?",
 ];
 const ACTIVE = new Set(["queued", "running"]);
+
+interface ChatMsg { id: string; role: "user" | "assistant"; text: string; taskId?: string; suggestions?: string[]; interpreted?: string; error?: boolean }
+
+const chatKey = (cityId: string) => `swarmos.chat.${cityId}`;
+function loadChat(cityId: string): ChatMsg[] {
+  try {
+    const raw = localStorage.getItem(chatKey(cityId));
+    return raw ? (JSON.parse(raw) as ChatMsg[]).slice(-60) : [];
+  } catch { return []; }
+}
+function saveChat(cityId: string, msgs: ChatMsg[]) {
+  try { localStorage.setItem(chatKey(cityId), JSON.stringify(msgs.slice(-60))); } catch { /* storage unavailable */ }
+}
+const msgId = () => Math.random().toString(36).slice(2, 10);
 
 export default function WorkspacePage() {
   const { cityId, city } = useCity();
   const [params, setParams] = useSearchParams();
   const taskId = params.get("task");
   const online = useOnline();
-  const toast = useToast();
   const qc = useQueryClient();
-  const [prompt, setPrompt] = useState("");
-  const [plan, setPlan] = useState<Plan | null>(null);
-  const [rain, setRain] = useState(50);
-  const [dtemp, setDtemp] = useState(0);
-  const [error, setError] = useState<string | null>(null);
+  const [messages, setMessages] = useState<ChatMsg[]>(() => loadChat(cityId));
+  const [input, setInput] = useState("");
+  const endRef = useRef<HTMLDivElement>(null);
 
-  const planM = useMutation({
-    mutationFn: () => api<Plan>(`/cities/${cityId}/tasks/plan`, { method: "POST", body: { prompt } }),
-    onSuccess: (p) => { setPlan(p); setError(null); },
-    onError: (e) => setError(e instanceof ApiError ? e.message : "Planning failed"),
-  });
-  const runM = useMutation({
-    mutationFn: () => {
-      const params: Record<string, Record<string, unknown>> = {};
-      if (plan?.agents.some((a) => a.id === "scenario_simulation_agent")) params.scenario_simulation_agent = { extra_rainfall_mm: rain, temperature_delta_c: dtemp };
-      return api<TaskDetail>(`/cities/${cityId}/tasks`, { method: "POST", body: { prompt, params, idempotency_key: newIdempotencyKey() } });
+  useEffect(() => { setMessages(loadChat(cityId)); }, [cityId]);
+  useEffect(() => { saveChat(cityId, messages); endRef.current?.scrollIntoView({ block: "end", behavior: "smooth" }); }, [messages, cityId]);
+
+  const send = useMutation({
+    mutationFn: (text: string) => {
+      const history = messages.slice(-10).map((m) => ({ role: m.role, text: m.text.slice(0, 4000) }));
+      return api<ChatReply>(`/cities/${cityId}/chat`, { method: "POST", body: { message: text, history, idempotency_key: newIdempotencyKey() } });
     },
-    onSuccess: (t) => {
-      setParams({ task: t.id });
-      setPlan(null);
-      void qc.invalidateQueries({ queryKey: ["tasks", cityId] });
-      toast("info", `Task submitted to ${t.agent_count} agents`);
+    onSuccess: (r) => {
+      setMessages((cur) => [...cur, r.type === "reply"
+        ? { id: msgId(), role: "assistant", text: r.text, suggestions: r.suggestions }
+        : { id: msgId(), role: "assistant", text: "", taskId: r.task.id, interpreted: r.interpreted_as }]);
+      if (r.type === "task") void qc.invalidateQueries({ queryKey: ["tasks", cityId] });
     },
-    onError: (e) => setError(e instanceof ApiError ? e.message : "Submission failed"),
+    onError: (e) => setMessages((cur) => [...cur, { id: msgId(), role: "assistant", error: true,
+      text: e instanceof ApiError ? e.message : "Sorry — I couldn't reach the server. Please try again." }]),
   });
 
-  const history = useQuery({ queryKey: ["tasks", cityId], queryFn: () => api<Page<TaskSummary>>(`/cities/${cityId}/tasks`, { query: { limit: 15 } }), refetchInterval: 10_000 });
+  const ask = (text: string) => {
+    const t = text.trim();
+    if (!t || send.isPending || !online) return;
+    setMessages((cur) => [...cur, { id: msgId(), role: "user", text: t }]);
+    setInput("");
+    send.mutate(t);
+  };
+  const onAnswered = (id: string, text: string, suggestions: string[]) =>
+    setMessages((cur) => cur.map((m) => (m.id === id && m.text !== text ? { ...m, text, suggestions } : m)));
+
+  const history = useQuery({ queryKey: ["tasks", cityId], queryFn: () => api<Page<TaskSummary>>(`/cities/${cityId}/tasks`, { query: { limit: 15 } }), refetchInterval: 15_000 });
 
   return (
     <>
       <div className="page-head">
-        <div><h1>AI Workspace — {city?.name}</h1><p>Ask an operational question. SwarmOS plans which agents to run, executes them locally, and returns findings with provenance. Nothing is executed without your approval.</p></div>
+        <div><h1>AI Assistant — {city?.name}</h1><p>Ask about the city in plain language. SwarmOS picks the right specialist agents, runs them on the server and answers with the evidence. Nothing is executed without your approval.</p></div>
+        {messages.length > 0 && <button className="btn ghost" onClick={() => { setMessages([]); setParams({}); }}><Icon name="refresh" />New chat</button>}
       </div>
       <div className="grid cols-3">
         <div className="span-2 stack-lg">
-          <Panel title="New task" icon="workspace">
-            <div className="stack-lg">
-              <Field label="Question or task" error={error}>
-                <textarea className="textarea" value={prompt} onChange={(e) => { setPrompt(e.target.value); setPlan(null); }} maxLength={2000}
-                  placeholder="e.g. Is there flooding risk in the next 72 hours?" data-testid="task-prompt" />
-              </Field>
-              <div className="row wrap">
-                {EXAMPLES.map((ex) => <button key={ex} className="chip" onClick={() => { setPrompt(ex); setPlan(null); }}>{ex}</button>)}
+          <Panel title="Chat" icon="workspace" flush>
+            <div className="chat" data-testid="chat">
+              <div className="chat-log" aria-live="polite">
+                {messages.length === 0 && (
+                  <div className="chat-empty">
+                    <p className="muted">Hi! I'm the SwarmOS assistant for {city?.name}. Try one of these, or type your own question:</p>
+                    <div className="row wrap">{EXAMPLES.map((ex) => <button key={ex} className="chip" onClick={() => ask(ex)}>{ex}</button>)}</div>
+                  </div>
+                )}
+                {messages.map((m) => (
+                  <div key={m.id} className={`chat-msg ${m.role}${m.error ? " error" : ""}`}>
+                    {m.role === "assistant" && <span className="chat-avatar" aria-hidden="true"><Icon name="agents" width={14} height={14} /></span>}
+                    <div className="chat-bubble">
+                      {m.taskId && !m.text
+                        ? <TaskAnswer taskId={m.taskId} interpreted={m.interpreted} onDone={(text, sug) => onAnswered(m.id, text, sug)} />
+                        : <div className="chat-text">{m.text}</div>}
+                      {m.taskId && m.text && (
+                        <button className="link xs" onClick={() => setParams({ task: m.taskId! })}>View agents, evidence and proposed actions</button>
+                      )}
+                      {m.suggestions && m.suggestions.length > 0 && m === messages[messages.length - 1] && (
+                        <div className="row wrap" style={{ marginTop: 8 }}>{m.suggestions.map((sg) => <button key={sg} className="chip" onClick={() => ask(sg)}>{sg}</button>)}</div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {send.isPending && <div className="chat-msg assistant"><span className="chat-avatar"><Icon name="agents" width={14} height={14} /></span><div className="chat-bubble"><span className="typing"><i /><i /><i /></span></div></div>}
+                <div ref={endRef} />
               </div>
-              <div className="row">
-                <button className="btn" disabled={prompt.trim().length < 3 || planM.isPending} onClick={() => planM.mutate()} data-testid="preview-plan">
-                  <Icon name="agents" />{planM.isPending ? "Planning…" : "Preview plan"}
-                </button>
-                <button className="btn primary" disabled={!plan || runM.isPending || !online} onClick={() => runM.mutate()} data-testid="run-task"
-                  title={!plan ? "Preview the plan first" : !online ? "Unavailable offline" : undefined}>
-                  <Icon name="play" />{runM.isPending ? "Submitting…" : "Run agents"}
-                </button>
-              </div>
+              <form className="chat-input" onSubmit={(e) => { e.preventDefault(); ask(input); }}>
+                <label className="sr-only" htmlFor="chat-box">Message</label>
+                <textarea id="chat-box" className="textarea" rows={1} value={input} maxLength={2000} data-testid="task-prompt"
+                  placeholder={online ? `Ask about ${city?.name ?? "the city"}… (Enter to send, Shift+Enter for a new line)` : "Offline — reconnect to ask questions"}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(input); } }} />
+                <button className="btn primary" type="submit" disabled={!input.trim() || send.isPending || !online} data-testid="run-task"><Icon name="play" />Send</button>
+              </form>
             </div>
           </Panel>
-          {plan && (
-            <Panel title={`Proposed execution plan · ${plan.agents.length} agents`} icon="agents">
-              <PlanGraph stages={plan.stages} names={Object.fromEntries(plan.agents.map((a) => [a.id, a.name]))} />
-              <div className="table-wrap" style={{ marginTop: 10 }}>
-                <table className="table"><thead><tr><th>Agent</th><th>Why selected</th><th>Depends on</th></tr></thead>
-                  <tbody>{plan.agents.map((a) => <tr key={a.id}><td style={{ fontWeight: 500 }}>{a.name}</td><td className="small muted">{a.reason}</td><td className="xs faint">{a.depends_on.length ? `${a.depends_on.length} upstream` : "—"}</td></tr>)}</tbody>
-                </table>
-              </div>
-              {Object.keys(plan.excluded).length > 0 && (
-                <div className="notice warn" style={{ marginTop: 10 }}><Icon name="info" /><span>Excluded: {Object.entries(plan.excluded).map(([a, why]) => `${a} (${why})`).join("; ")}</span></div>
-              )}
-              {plan.agents.some((a) => a.id === "scenario_simulation_agent") && (
-                <div className="grid cols-2" style={{ marginTop: 10 }}>
-                  <Field label="Scenario: extra rainfall in 24 h (mm)"><input className="input" type="number" min={0} max={500} value={rain} onChange={(e) => setRain(Math.max(0, Math.min(500, Number(e.target.value))))} /></Field>
-                  <Field label="Scenario: temperature change (°C)"><input className="input" type="number" min={-10} max={10} step={0.5} value={dtemp} onChange={(e) => setDtemp(Math.max(-10, Math.min(10, Number(e.target.value))))} /></Field>
-                </div>
-              )}
-            </Panel>
-          )}
-          {taskId ? <TaskView taskId={taskId} /> : !plan && <Panel><EmptyState title="No task selected" icon="workspace">Write a question, preview the plan, then run it. Results, confidence, data freshness and proposed actions appear here.</EmptyState></Panel>}
+          {taskId && <TaskView taskId={taskId} />}
         </div>
-        <Panel title="History" icon="refresh" flush>
+        <Panel title="Recent questions" icon="refresh" flush>
           {history.error ? <div className="panel-body"><ErrorState error={history.error} /></div> : !history.data ? <div className="panel-body"><LoadingBlock /></div> : (
             <ul className="list">
               {history.data.items.map((t) => (
@@ -116,12 +135,42 @@ export default function WorkspacePage() {
                   </div>
                 </li>
               ))}
-              {!history.data.items.length && <li className="small faint">No tasks yet for this city.</li>}
+              {!history.data.items.length && <li className="small faint">No questions yet for this city.</li>}
             </ul>
           )}
         </Panel>
       </div>
     </>
+  );
+}
+
+/** Polls an agent run and shows progress, then the conversational answer (reported back so the chat keeps it). */
+function TaskAnswer({ taskId, interpreted, onDone }: { taskId: string; interpreted?: string; onDone: (text: string, suggestions: string[]) => void }) {
+  const { cityId } = useCity();
+  const q = useQuery({
+    queryKey: ["task", cityId, taskId],
+    queryFn: () => api<TaskDetail>(`/cities/${cityId}/tasks/${taskId}`),
+    refetchInterval: (query) => (query.state.data && ACTIVE.has(query.state.data.status) ? 1000 : false),
+  });
+  const t = q.data;
+  const finished = t && !ACTIVE.has(t.status);
+  useEffect(() => {
+    if (finished && t) {
+      const text = t.result?.answer ?? t.result?.summary ?? (t.status === "cancelled" ? "The run was cancelled." : t.error ?? "The agents could not produce an answer.");
+      onDone(text, t.result?.suggestions ?? []);
+    }
+  }, [finished, t, onDone]);
+  if (q.error) return <div className="chat-text">Couldn't load the result: {q.error instanceof ApiError ? q.error.message : "network error"}</div>;
+  const done = t ? t.executions.filter((e) => !["pending", "running"].includes(e.status)).length : 0;
+  const total = t?.executions.length ?? 0;
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <div className="small muted">
+        {interpreted ? <>Checking: “{interpreted}”</> : "Working on it…"}
+      </div>
+      <div className="xs faint">Running {total || "…"} agent{total === 1 ? "" : "s"}: {done} / {total || "?"} done</div>
+      <div className="progress"><span style={{ width: `${total ? (done / total) * 100 : 8}%` }} /></div>
+    </div>
   );
 }
 
@@ -194,7 +243,7 @@ function TaskView({ taskId }: { taskId: string }) {
             {t.status !== "succeeded" && t.status !== "cancelled" && (
               <div className="notice warn"><Icon name="alert" /><span><b>{titleCase(t.status)} result.</b> {t.error} Agents that were unavailable or failed are listed below — their domains are not covered by this answer.</span></div>
             )}
-            <p style={{ fontSize: 15, lineHeight: 1.6 }} data-testid="task-summary">{r.summary}</p>
+            <p style={{ fontSize: 15, lineHeight: 1.6, whiteSpace: "pre-line" }} data-testid="task-summary">{r.answer ?? r.summary}</p>
             <div className="row wrap">
               <span className="badge b-info">Confidence {pct(r.confidence)}</span>
               {r.provenance.map((p) => <ProvenanceBadge key={p} p={p} />)}
