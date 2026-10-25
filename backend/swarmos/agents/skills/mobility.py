@@ -9,12 +9,13 @@ from swarmos.agents.contracts import ActionDraft, AgentContext, AgentResult
 from swarmos.agents.skills.common import (
     SEVERITY_WEIGHT,
     age_hours,
-    feature_ref,
     finding,
     forecast_next_24h,
     ist,
+    layer_ref,
     ok,
     records_ref,
+    source_phrase,
     unavailable,
 )
 from swarmos.ml.features import floor_hour
@@ -94,7 +95,7 @@ def congestion_forecast(ctx: AgentContext) -> AgentResult:
 def public_transit(ctx: AgentContext) -> AgentResult:
     feats = ctx.data.features(["bus_station", "rail_station"])
     if not feats:
-        return unavailable(["OpenStreetMap transit facilities (run OSM sync)"],
+        return unavailable(["transit facility locations (run the MapmyIndia or OpenStreetMap sync)"],
                            "No transit facility data has been synchronised for this city.")
     bus = [f for f in feats if f.layer == "bus_station"]
     rail = [f for f in feats if f.layer == "rail_station"]
@@ -115,12 +116,12 @@ def public_transit(ctx: AgentContext) -> AgentResult:
         findings.append(finding("Sparse mapped transit-station coverage",
                                 f"Only {coverage:.0%} of the viewport grid has a mapped bus/rail station.", "moderate"))
     return ok(
-        f"{len(bus)} bus stations and {len(rail)} rail stations mapped in OSM; {coverage:.0%} grid coverage.",
+        f"{len(bus)} bus stations and {len(rail)} rail stations {source_phrase(feats)}; {coverage:.0%} grid coverage.",
         confidence=0.6, method="spatial:grid_coverage", findings=findings, metrics=metrics,
-        extra_refs=[feature_ref("bus_station", len(bus), "live", "osm-overpass"), feature_ref("rail_station", len(rail), "live", "osm-overpass")],
+        extra_refs=[layer_ref("bus_station", feats), layer_ref("rail_station", feats)],
         provenance={f.provenance for f in feats},
         limitations=["Counts bus *stations/terminals*, not individual stops; GTFS feeds would enable route-level analysis.",
-                     "OSM completeness varies by city."],
+                     "Map-data completeness varies by city."],
     )
 
 
