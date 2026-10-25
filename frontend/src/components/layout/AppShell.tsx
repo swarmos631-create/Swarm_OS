@@ -8,20 +8,21 @@ import { ago } from "../../lib/format";
 import { Icon, type IconName } from "../../lib/icons";
 import { useCity } from "../../state/city";
 import { useSession } from "../../state/session";
+import { useTheme, type ThemePref } from "../../state/theme";
 import { useOnline } from "../../state/ui";
 import { CitySelector } from "./CitySelector";
 import { PwaControls } from "./PwaControls";
 
-const NAV: { to: string; label: string; icon: IconName; section?: string }[] = [
-  { to: "", label: "Command Center", icon: "command", section: "Operate" },
-  { to: "map", label: "Operations Map", icon: "map" },
-  { to: "incidents", label: "Incidents", icon: "incidents" },
-  { to: "workspace", label: "AI Workspace", icon: "workspace", section: "Intelligence" },
-  { to: "agents", label: "Agent Fleet", icon: "agents" },
-  { to: "analytics", label: "Analytics", icon: "analytics" },
-  { to: "integrations", label: "Data Integrations", icon: "integrations", section: "Platform" },
-  { to: "models", label: "Model Lab", icon: "models" },
-  { to: "system", label: "System", icon: "system" },
+const NAV: { to: string; label: string; icon: IconName; color: string; section?: string }[] = [
+  { to: "", label: "Command Center", color: "var(--violet)", icon: "command", section: "Operate" },
+  { to: "map", label: "Operations Map", color: "var(--cyan)", icon: "map" },
+  { to: "incidents", label: "Incidents", color: "var(--red)", icon: "incidents" },
+  { to: "workspace", label: "AI Workspace", color: "var(--pink)", icon: "workspace", section: "Intelligence" },
+  { to: "agents", label: "Agent Fleet", color: "var(--orange)", icon: "agents" },
+  { to: "analytics", label: "Analytics", color: "var(--blue)", icon: "analytics" },
+  { to: "integrations", label: "Data Integrations", color: "var(--teal)", icon: "integrations", section: "Platform" },
+  { to: "models", label: "Model Lab", color: "var(--amber)", icon: "models" },
+  { to: "system", label: "System", color: "var(--green)", icon: "system" },
 ];
 
 function Notifications({ cityId }: { cityId: string }) {
@@ -55,6 +56,26 @@ function Notifications({ cityId }: { cityId: string }) {
   );
 }
 
+const THEMES: { id: ThemePref; label: string; icon: IconName }[] = [
+  { id: "light", label: "Light theme", icon: "sun" },
+  { id: "dark", label: "Dark theme", icon: "moon" },
+  { id: "system", label: "Match system theme", icon: "monitor" },
+];
+
+/** Light / dark / system appearance switch, remembered on this device. */
+export function ThemeSwitch() {
+  const { pref, setPref } = useTheme();
+  return (
+    <div className="theme-switch" role="group" aria-label="Appearance">
+      {THEMES.map((t) => (
+        <button key={t.id} type="button" aria-pressed={pref === t.id} onClick={() => setPref(t.id)} title={t.label} aria-label={t.label} data-testid={`theme-${t.id}`}>
+          <Icon name={t.icon} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** Live summary pills across the top bar ("Active: 6/10" style). */
 function StatPills({ cityId }: { cityId: string }) {
   const q = useQuery({ ...dashboardQuery(cityId), refetchInterval: 60_000 });
@@ -66,11 +87,11 @@ function StatPills({ cityId }: { cityId: string }) {
   const runs = Object.values(d.agents.executions_24h).reduce((a, b) => a + b, 0);
   return (
     <div className="stat-pills hide-sm" aria-label="City summary">
-      <span className="pill"><Icon name="incidents" />Incidents: <b>{d.incidents.open}</b></span>
-      <span className="pill"><Icon name="alert" />Critical: <b>{d.incidents.by_severity.critical}</b></span>
-      <span className="pill"><Icon name="integrations" />Sources: <b>{ok}/{sources.length}</b></span>
-      <span className="pill"><Icon name="agents" />Agent runs 24h: <b>{runs}</b></span>
-      {aqi?.status === "available" && <span className="pill"><Icon name="analytics" />AQI: <b>{String(aqi.value)}</b></span>}
+      <span className="pill" style={{ ["--c" as string]: "var(--red)" }}><Icon name="incidents" />Incidents: <b>{d.incidents.open}</b></span>
+      <span className="pill" style={{ ["--c" as string]: "var(--orange)" }}><Icon name="alert" />Critical: <b>{d.incidents.by_severity.critical}</b></span>
+      <span className="pill" style={{ ["--c" as string]: "var(--teal)" }}><Icon name="integrations" />Sources: <b>{ok}/{sources.length}</b></span>
+      <span className="pill" style={{ ["--c" as string]: "var(--violet)" }}><Icon name="agents" />Agent runs 24h: <b>{runs}</b></span>
+      {aqi?.status === "available" && <span className="pill" style={{ ["--c" as string]: "var(--cyan)" }}><Icon name="analytics" />AQI: <b>{String(aqi.value)}</b></span>}
     </div>
   );
 }
@@ -95,16 +116,16 @@ export function AppShell() {
         <nav className="rail-nav">
           {NAV.map((n) => (
             <Section key={n.label} title={n.section}>
-              <NavLink end={n.to === ""} to={`/c/${cityId}${n.to ? `/${n.to}` : ""}`} className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`} title={n.label}>
+              <NavLink end={n.to === ""} to={`/c/${cityId}${n.to ? `/${n.to}` : ""}`} className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`} title={n.label} style={{ ["--c" as string]: n.color }}>
                 <span className="nav-ico"><Icon name={n.icon} /></span><span className="nav-label">{n.label}</span>
               </NavLink>
             </Section>
           ))}
         </nav>
         <div className="sidebar-foot">
-          <NavLink to={`/c/${cityId}/system`} className="nav-link" title="System status"><span className="nav-ico"><Icon name="settings" /></span><span className="nav-label">Settings</span></NavLink>
-          <a className="nav-link" href="/api/health/ready" target="_blank" rel="noreferrer" title="API health"><span className="nav-ico"><Icon name="help" /></span><span className="nav-label">API health</span></a>
-          {!me?.auth_disabled && <button className="nav-link" onClick={() => void logout()} title="Sign out"><span className="nav-ico"><Icon name="logout" /></span><span className="nav-label">Sign out</span></button>}
+          <NavLink to={`/c/${cityId}/system`} className="nav-link" title="System status" style={{ ["--c" as string]: "var(--text-2)" }}><span className="nav-ico"><Icon name="settings" /></span><span className="nav-label">Settings</span></NavLink>
+          <a className="nav-link" style={{ ["--c" as string]: "var(--text-2)" }} href="/api/health/ready" target="_blank" rel="noreferrer" title="API health"><span className="nav-ico"><Icon name="help" /></span><span className="nav-label">API health</span></a>
+          {!me?.auth_disabled && <button className="nav-link" style={{ ["--c" as string]: "var(--text-2)" }} onClick={() => void logout()} title="Sign out"><span className="nav-ico"><Icon name="logout" /></span><span className="nav-label">Sign out</span></button>}
         </div>
       </aside>
       {menu && <div className="overlay" style={{ zIndex: 39 }} onClick={() => setMenu(false)} />}
@@ -115,6 +136,7 @@ export function AppShell() {
           <div className="spacer" />
           <CitySelector />
           <span className={`pill hide-sm ${online ? "" : "warn"}`} aria-live="polite"><span className={`pulse ${online ? "" : "off"}`} />{online ? "Online" : "Offline"}</span>
+          <ThemeSwitch />
           <PwaControls />
           <Notifications cityId={cityId} />
           <div className="user-chip hide-sm" title={me?.email}>
