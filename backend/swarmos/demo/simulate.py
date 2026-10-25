@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import math
 import random
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from functools import lru_cache
 from importlib import resources
@@ -175,19 +176,20 @@ def _spread(city: City, rng: random.Random) -> tuple[float, float]:
     return round(lat, 5), round(lon, 5)
 
 
-def facilities(city: City) -> list[NormalizedFeature]:
+def facilities(city: City, place: Callable[[float], tuple[float, float]] | None = None) -> list[NormalizedFeature]:
+    """Facility counts scale with population; `place(spread)` returns a land point inside the city (see landmask.Placer)."""
     rng = random.Random(f"fac:{city.id}")
     lakhs = max(2.0, (city.population or 1_000_000) / 1e5)
     feats: list[NormalizedFeature] = []
     for layer, (label, per_lakh, cap) in FACILITY_TYPES.items():
         n = int(min(cap, max(3, round(per_lakh * lakhs * rng.uniform(0.8, 1.2)))))
         for i in range(n):
-            lat, lon = _spread(city, rng)
+            lat, lon = place(0.2) if place else _spread(city, rng)
             props: dict[str, Any] = {"wheelchair": rng.choice(WHEELCHAIR), "simulated": True}
             if layer == "hospital":
                 props["beds"] = str(rng.choice([30, 50, 75, 100, 150, 200, 300, 500]))
                 props["operator_type"] = rng.choice(["government", "private", "private", "charitable"])
-            feats.append(NormalizedFeature(layer=layer, external_id=f"sim-{layer}-{i}", name=f"{label} {i + 1}", lat=lat, lon=lon,
+            feats.append(NormalizedFeature(layer=layer, external_id=f"sim-{layer}-{i}", name=f"{label} {i + 1}, {city.name}", lat=lat, lon=lon,
                                            properties=props))
     return feats
 
