@@ -568,3 +568,5 @@ pre.json { background: var(--surface-2); border: 1px solid var(--line); border-r
 .base-switch { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--glass); border: 1px solid var(--line-strong); backdrop-filter: blur(8px); }
 .base-switch button { height: 28px; padding: 0 12px; border-radius: 999px; border: 0; background: transparent; color: var(--text-2); font: 600 11.5px var(--font-ui); cursor: pointer; }
 .base-switch button[aria-pressed="true"] { background: var(--grad-brand); color: #fff; }
+/* MapmyIndia offers only a day style on this plan: tint its canvas for dark mode (markers are DOM, so keep their colours). */
+:root[data-theme="dark"] .mappls-canvas-host canvas { filter: invert(0.9) hue-rotate(180deg) saturate(0.7) brightness(0.95) contrast(0.92); }
