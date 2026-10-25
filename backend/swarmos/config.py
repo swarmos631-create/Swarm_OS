@@ -83,7 +83,7 @@ class Settings(BaseSettings):
     prebuild_cities: bool = True
     # Stop pre-building once the database reaches this size (MB); other cities are then built on their first visit.
     # Railway's free volume is 500 MB, so keep room for live data, models and write-ahead log.
-    prebuild_db_budget_mb: int = Field(default=260, ge=50)
+    prebuild_db_budget_mb: int = Field(default=120, ge=50)
     # PostgreSQL write-ahead-log cap applied at startup when the app's database user may change it (own database
     # only). Postgres defaults to 1 GB, which can fill a small volume during bulk writes. Empty = leave as is.
     db_max_wal_size: str | None = "64MB"
@@ -96,7 +96,7 @@ class Settings(BaseSettings):
     sync_interval_minutes: int = Field(default=30, ge=5)
     # Live readings older than this are pruned daily (and at startup). Hourly feeds for ~90 cities are the largest
     # table, so keep it short on small databases; simulated history is unaffected.
-    measurement_retention_days: int = Field(default=4, ge=2, le=365)
+    measurement_retention_days: int = Field(default=3, ge=2, le=365)
     sync_cities: CsvList = Field(default_factory=lambda: ["bengaluru", "mumbai", "delhi"])
 
     open_meteo_base_url: str = "https://api.open-meteo.com/v1/forecast"
