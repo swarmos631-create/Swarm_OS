@@ -62,6 +62,8 @@ class Worker:
         self._last_schedule: float = 0.0
         self.active = 0
         self.max_parallel = 3
+        # Model training is memory-hungry: run at most one at a time (small instances have ~512 MB).
+        self.training = 0
 
     def stop(self) -> None:
         self._stop.set()
@@ -76,8 +78,9 @@ class Worker:
                 with session_scope() as db:
                     queue.reap_expired(db)
                 if len(inflight) < self.max_parallel:
+                    kinds = [k for k in HANDLERS if not (self.training and k == "train_model")]
                     with session_scope() as db:
-                        job = queue.claim(db, self.worker_id, kinds=list(HANDLERS))
+                        job = queue.claim(db, self.worker_id, kinds=kinds)
                         claimed = (job.id, job.kind, dict(job.payload), job.correlation_id) if job else None
                     if claimed:
                         t = asyncio.create_task(self._run_job(*claimed))
@@ -96,7 +99,13 @@ class Worker:
         log.info("worker_stopped")
 
     async def _run_job(self, job_id: str, kind: str, payload: dict[str, Any], correlation_id: str | None) -> None:
-        await execute_job(job_id, kind, payload, correlation_id)
+        if kind == "train_model":
+            self.training += 1
+        try:
+            await execute_job(job_id, kind, payload, correlation_id)
+        finally:
+            if kind == "train_model":
+                self.training -= 1
 
     def _maybe_schedule(self, now_mono: float) -> None:
         if not self.settings.sync_enabled or now_mono - self._last_schedule < 60:
