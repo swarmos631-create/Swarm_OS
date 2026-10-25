@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from swarmos.agents.chat import interpret
 from swarmos.agents.contracts import DOMAINS
 from swarmos.agents.registry import AGENTS, REGISTRY
 from swarmos.api.common import PageParams, iso, page_params, paginate
@@ -83,7 +84,7 @@ def get_agent(agent_id: str, principal: Principal = Depends(current_principal), 
 
 
 class TaskIn(BaseModel):
-    prompt: str = Field(min_length=3, max_length=2000)
+    prompt: str = Field(min_length=1, max_length=2000)
     agent_ids: list[str] | None = Field(default=None, max_length=50)
     domains: list[str] | None = Field(default=None, max_length=10)
     params: dict[str, dict[str, Any]] = Field(default_factory=dict)
@@ -122,6 +123,33 @@ def create_task(body: TaskIn, response: Response, request: Request, background_t
         response.status_code = 200
     dispatch(background_tasks, db, db.scalar(select(Job).where(Job.dedupe_key == f"task:{task.id}")))
     return task_dict(task, detail=True)
+
+
+class ChatMessage(BaseModel):
+    role: str = Field(pattern=r"^(user|assistant)$")
+    text: str = Field(max_length=4000)
+
+
+class ChatIn(BaseModel):
+    message: str = Field(min_length=1, max_length=2000)
+    history: list[ChatMessage] = Field(default_factory=list, max_length=20)
+    params: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    idempotency_key: str | None = Field(default=None, max_length=80, pattern=r"^[A-Za-z0-9_.:-]+$")
+
+
+@router.post("/cities/{city_id}/chat")
+def chat(body: ChatIn, request: Request, background_tasks: BackgroundTasks, city: City = Depends(city_access),
+         principal: Principal = Depends(current_principal), db: Session = Depends(get_db)) -> dict[str, Any]:
+    """One chat message: small talk is answered directly; questions start an agent run whose result carries
+    a conversational `answer` and follow-up `suggestions`."""
+    turn = interpret(body.message, city.name, [h.model_dump() for h in body.history])
+    if turn.kind == "reply":
+        return {"type": "reply", "text": turn.text, "suggestions": turn.suggestions}
+    limiter.check(f"task:{principal.id}", get_settings().task_rate_limit_per_minute)
+    task, _ = submit_task(db, principal, city.id, turn.prompt, params={**turn.params, **body.params}, agent_ids=None, domains=None,
+                          idempotency_key=body.idempotency_key)
+    dispatch(background_tasks, db, db.scalar(select(Job).where(Job.dedupe_key == f"task:{task.id}")))
+    return {"type": "task", "interpreted_as": turn.prompt, "task": task_dict(task, detail=True)}
 
 
 @router.get("/cities/{city_id}/tasks")
