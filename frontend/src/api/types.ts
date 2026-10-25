@@ -71,6 +71,7 @@ export interface SourceStatus {
   applies_to_city: boolean;
   scope: string;
   last_run: { status: string; started_at: string; records: number; error: string | null; duration_ms: number | null } | null;
+  last_success_at: string | null;
   freshness: Freshness | null;
   attribution: string;
 }
@@ -118,6 +119,26 @@ export interface Incident extends IncidentSummary {
   resolved_at: string | null;
   version: number;
   events?: { kind: string; from_status: string | null; to_status: string | null; note: string | null; actor_id: string | null; created_at: string }[];
+  evidence?: IncidentEvidence[];
+}
+
+export interface IncidentEvidence {
+  id: number;
+  source_type: "measurement" | "agent_execution" | "service_request" | "feature" | "proposed_action";
+  source_id: string;
+  relationship: "supports" | "contradicts" | "context";
+  note: string | null;
+  label: string;
+  summary: string;
+  source: string | null;
+  provenance: Provenance | Provenance[];
+  observed_at: string | null;
+  fetched_at: string | null;
+  freshness: Freshness | null;
+  limitations: string[];
+  findings?: Finding[];
+  data_refs?: Record<string, unknown>[];
+  created_at: string;
 }
 
 export interface AgentInfo {
@@ -212,6 +233,20 @@ export interface ProposedAction {
   decided_at: string | null;
   decision_note: string | null;
   execution_result: Record<string, unknown> | null;
+  outcome?: InterventionOutcome | null;
+}
+
+export interface InterventionOutcome {
+  id: string;
+  action_id: string;
+  city_id: string;
+  outcome: "improved" | "unchanged" | "worsened" | "unverified";
+  note: string;
+  measurement_ids: number[];
+  recorded_at: string;
+  updated_at: string;
+  evidence: { id: number; metric: string; value: number; unit: string; kind: string; provenance: string; observed_at: string; fetched_at: string }[];
+  interpretation: string;
 }
 
 export interface TaskSummary {
@@ -247,6 +282,13 @@ export interface TaskDetail extends TaskSummary {
     execution_policy: string;
   } | null;
   executions: Execution[];
+  consensus?: {
+    status: "differences_found" | "no_material_difference_detected" | "insufficient_overlap";
+    shared_signals: number;
+    material_differences: number;
+    comparisons: { kind: "metric" | "finding"; signal: string; values: { agent_id: string; value?: number; title?: string; severity?: string }[]; spread?: number; material_difference: boolean }[];
+    limitations: string[];
+  };
   handoffs?: { from: string; to: string; digest: string; status: string; at: string }[];
   actions?: ProposedAction[];
 }

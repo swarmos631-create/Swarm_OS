@@ -164,7 +164,7 @@ def community_needs(ctx: AgentContext) -> AgentResult:
     return ok(f"Top community concern: {by_cat.most_common(1)[0][0]} ({by_cat.most_common(1)[0][1]} of {len(reqs)} requests).",
               confidence=0.7, method="descriptive:aggregation", provenance={r.provenance for r in reqs},
               metrics={"by_category": dict(by_cat.most_common()), "by_ward": dict(by_ward.most_common(10)), "total_30d": len(reqs)},
-              extra_refs=[records_ref("service_requests", len(reqs), {r.provenance for r in reqs})],
+              extra_refs=[records_ref("service_requests", len(reqs), {r.provenance for r in reqs}, request_ids=(r.id for r in reqs))],
               limitations=["Complaint volume reflects reporting behaviour as well as need."])
 
 

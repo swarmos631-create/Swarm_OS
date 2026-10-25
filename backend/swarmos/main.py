@@ -18,7 +18,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from swarmos import __version__
 from swarmos.agents.registry import AGENTS
-from swarmos.api import agents, auth, cities, incidents, internal, platform
+from swarmos.api import agents, auth, cities, incidents, internal, outcomes, platform, reports, routes
 from swarmos.config import ON_VERCEL, REPO_ROOT, get_settings
 from swarmos.core.errors import install_error_handlers
 from swarmos.core.logging import configure_logging, correlation_id_var
@@ -162,7 +162,7 @@ def create_app() -> FastAPI:
         return response
 
     prefix = "/api/v1"
-    for r in (auth.router, cities.router, incidents.router, agents.router, platform.router):
+    for r in (auth.router, cities.router, incidents.router, agents.router, platform.router, reports.router, routes.router, outcomes.router):
         app.include_router(r, prefix=prefix)
     app.include_router(internal.router, prefix="/api")
 

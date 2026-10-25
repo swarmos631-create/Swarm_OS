@@ -12,6 +12,7 @@ declare global {
 }
 
 let loading: Promise<any> | null = null;
+let searchLoading: Promise<any> | null = null;
 
 /** Load the Mappls Web SDK v3 once. Rejects after 15 s or on a script error (bad key, domain not whitelisted, offline). */
 export function loadMappls(): Promise<any> {
@@ -50,6 +51,32 @@ export function loadMappls(): Promise<any> {
     throw e;
   });
   return loading;
+}
+
+/** Load Mappls' optional Place Search plugin. It uses the same domain-restricted browser key as the base map. */
+export function loadMapplsSearch(): Promise<any> {
+  return loadMappls().then((mappls) => {
+    if (typeof mappls.search === "function") return mappls;
+    if (searchLoading) return searchLoading;
+    searchLoading = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = `https://sdk.mappls.com/map/sdk/plugins?access_token=${encodeURIComponent(MAPPLS_KEY)}&v=3.0&libraries=search`;
+      script.async = true;
+      const started = Date.now();
+      const poll = () => {
+        if (typeof window.mappls?.search === "function") resolve(window.mappls);
+        else if (Date.now() - started > 15_000) reject(new Error("Mappls Place Search did not initialise. Check that Place Search is enabled for this key."));
+        else setTimeout(poll, 100);
+      };
+      script.onload = poll;
+      script.onerror = () => reject(new Error("Mappls Place Search could not be downloaded."));
+      document.head.appendChild(script);
+    }).catch((error) => {
+      searchLoading = null;
+      throw error;
+    });
+    return searchLoading;
+  });
 }
 
 const call = (obj: any, name: string, ...args: any[]) => {
@@ -96,29 +123,41 @@ export interface MapPoint {
   props: Record<string, any>;
 }
 
+export interface MapLine {
+  id: string;
+  coordinates: [number, number][];
+  color: string;
+  title: string;
+}
+
+const EMPTY_LINES: MapLine[] = [];
+
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] as string);
 
 /**
  * MapmyIndia vector map with SwarmOS points as coloured markers. Tilts to 60° in 3D mode (Mappls renders its
  * building models at street zoom). Calls `onFail` if the SDK cannot start, so the page can explain why.
  */
-export function MapplsCanvas({ center, zoom, points, mode3d, theme, onSelect, onReady, onFail, label }: {
+export function MapplsCanvas({ center, zoom, points, lines = EMPTY_LINES, mode3d, theme, onSelect, onReady, onFail, onMapClick, label }: {
   center: { lat: number; lon: number };
   zoom: number;
   points: MapPoint[];
+  lines?: MapLine[];
   mode3d: boolean;
   theme: MapTheme;
   onSelect?: (p: MapPoint) => void;
   onReady?: (m: MapLike | null) => void;
   onFail: (message: string) => void;
+  onMapClick?: (coordinate: [number, number]) => void;
   label: string;
 }) {
   const id = `mappls-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
   const mapRef = useRef<any>(null);
   const markers = useRef<any[]>([]);
+  const polylines = useRef<any[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const cbs = useRef({ onSelect, onReady, onFail });
-  cbs.current = { onSelect, onReady, onFail };
+  const cbs = useRef({ onSelect, onReady, onFail, onMapClick });
+  cbs.current = { onSelect, onReady, onFail, onMapClick };
 
   useEffect(() => {
     let dead = false;
@@ -146,6 +185,8 @@ export function MapplsCanvas({ center, zoom, points, mode3d, theme, onSelect, on
       setLoaded(false);
       markers.current.forEach((mk) => call(mk, "remove"));
       markers.current = [];
+      polylines.current.forEach((line) => call(window.mappls, "remove", { map: mapRef.current, layer: line }));
+      polylines.current = [];
       call(mapRef.current, "remove");
       mapRef.current = null;
       cbs.current.onReady?.(null);
@@ -174,6 +215,53 @@ export function MapplsCanvas({ center, zoom, points, mode3d, theme, onSelect, on
       }
     }).filter(Boolean);
   }, [points, loaded]);
+
+  useEffect(() => {
+    const m = mapRef.current;
+    const mappls = window.mappls;
+    if (!m || !mappls || !loaded) return;
+    polylines.current.forEach((line) => call(mappls, "remove", { map: m, layer: line }));
+    polylines.current = [];
+    const validLines = lines.filter((line) => line.coordinates.length >= 2 && line.coordinates.length <= 10000);
+    polylines.current = validLines.map((line, index) => {
+      try {
+        return new mappls.Polyline({
+          map: m,
+          path: line.coordinates.map(([lon, lat]) => ({ lat, lng: lon })),
+          strokeColor: line.color,
+          strokeOpacity: index === 0 ? 1 : 0.82,
+          strokeWeight: index === 0 ? 7 : 5,
+          fitbounds: false,
+          popupHtml: esc(line.title),
+          zIndex: validLines.length - index,
+        });
+      } catch {
+        return null;
+      }
+    }).filter(Boolean);
+    if (validLines.length) {
+      const coordinates = validLines.flatMap((line) => line.coordinates);
+      const xs = coordinates.map(([lon]) => lon), ys = coordinates.map(([, lat]) => lat);
+      adapt(m).fitBounds([Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)], { padding: 56 });
+    }
+  }, [lines, loaded]);
+
+  useEffect(() => {
+    const m = mapRef.current;
+    if (!m || !loaded) return;
+    const onClick = (event: any) => {
+      const point = event?.lngLat ?? event?.lnglat;
+      const lon = Number(point?.lng ?? point?.lon ?? point?.[0]);
+      const lat = Number(point?.lat ?? point?.[1]);
+      if (Number.isFinite(lon) && Number.isFinite(lat)) cbs.current.onMapClick?.([lon, lat]);
+    };
+    if (typeof m.on === "function") m.on("click", onClick);
+    else call(m, "addListener", "click", onClick);
+    return () => {
+      if (typeof m.off === "function") m.off("click", onClick);
+      else call(m, "removeListener", "click", onClick);
+    };
+  }, [loaded]);
 
   useEffect(() => {
     const m = mapRef.current;

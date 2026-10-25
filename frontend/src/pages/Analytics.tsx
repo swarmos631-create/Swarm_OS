@@ -4,7 +4,7 @@ import { useState } from "react";
 import { api } from "../api/client";
 import { BarList, LineChart, StackedBars } from "../components/charts";
 import { EmptyState, ErrorState, LoadingBlock, Panel, ProvenanceBadge } from "../components/ui";
-import { fmtNum, pct, titleCase } from "../lib/format";
+import { fmtNum, fmtTime, pct, titleCase } from "../lib/format";
 import { useCities, useCity } from "../state/city";
 
 interface Analytics {
@@ -67,6 +67,8 @@ export default function AnalyticsPage() {
               );
             })}
           </div>
+          <ForecastEvaluation days={days} />
+          <CrossTaskReview days={days} />
           <div className="grid cols-2">
             <Panel title="Agent reliability (this city)">
               {execTotals.length ? (
@@ -88,6 +90,81 @@ export default function AnalyticsPage() {
       )}
     </>
   );
+}
+
+interface CrossTaskReviewData {
+  tasks_reviewed: number;
+  metric_relationships: { signal: string; task_count: number; domains: string[]; relationship: string; instances: { task_id: string; agent_id: string; domain: string; task_created_at: string; execution_status: string; value: number; provenance: string[]; evidence_refs: Record<string, unknown>[] }[] }[];
+  finding_relationships: { signal: string; task_count: number; domains: string[]; relationship: string; instances: { title: string; task_id: string; agent_id: string; domain: string; task_created_at: string; severity: string; provenance: string[]; evidence_refs: Record<string, unknown>[] }[] }[];
+  limitations: string[];
+}
+
+function CrossTaskReview({ days }: { days: number }) {
+  const { cityId } = useCity();
+  const q = useQuery({
+    queryKey: ["impact-review", cityId, days],
+    queryFn: () => api<CrossTaskReviewData>(`/cities/${cityId}/impact-review`, { query: { days } }),
+  });
+  return <Panel title={`Cross-task impact review (${days} days)`} icon="analytics">
+    {q.error ? <ErrorState error={q.error} onRetry={() => void q.refetch()} /> : !q.data ? <LoadingBlock rows={3} /> : <div className="stack-lg">
+      <div className="row wrap"><span className="badge b-records">{q.data.tasks_reviewed} runs reviewed</span><span className="badge b-info">Exact-match descriptive review</span></div>
+      <div className="grid cols-2">
+        <Panel title={`Shared metric paths (${q.data.metric_relationships.length})`} flush>
+          {q.data.metric_relationships.length ? <div className="stack">{q.data.metric_relationships.map((group) => <section key={group.signal} className="panel-body" style={{ borderBottom: "1px solid var(--line)" }}>
+            <div className="row between wrap"><b className="small">{group.signal}</b><span className="badge b-records">{group.task_count} tasks</span></div>
+            <div className="row wrap xs faint">{group.domains.map((domain) => <span key={domain}>{titleCase(domain)}</span>)}</div>
+            <ul className="list">{group.instances.map((item, index) => <li key={`${item.task_id}-${item.agent_id}-${index}`} className="small">
+              <span>{item.agent_id} · {fmtNum(item.value)}</span><span className="xs faint">{item.execution_status} · {item.provenance.join(", ") || "origin unknown"} · Task {item.task_id.slice(0, 10)} · {fmtTime(item.task_created_at)}</span>
+            </li>)}</ul>
+          </section>)}</div> : <EmptyState title="No repeated cross-domain metric paths">Two or more domains must report the same exact path across separate tasks.</EmptyState>}
+        </Panel>
+        <Panel title={`Shared finding titles (${q.data.finding_relationships.length})`} flush>
+          {q.data.finding_relationships.length ? <div className="stack">{q.data.finding_relationships.map((group) => <section key={group.signal} className="panel-body" style={{ borderBottom: "1px solid var(--line)" }}>
+            <div className="row between wrap"><b className="small">{group.signal}</b><span className="badge b-records">{group.task_count} tasks</span></div>
+            <div className="row wrap xs faint">{group.domains.map((domain) => <span key={domain}>{titleCase(domain)}</span>)}</div>
+            <ul className="list">{group.instances.map((item, index) => <li key={`${item.task_id}-${item.agent_id}-${index}`} className="small">
+              <span>{item.agent_id} · {titleCase(item.severity)}</span><span className="xs faint">{item.provenance.join(", ") || "origin unknown"} · Task {item.task_id.slice(0, 10)} · {fmtTime(item.task_created_at)}</span>
+            </li>)}</ul>
+          </section>)}</div> : <EmptyState title="No repeated cross-domain findings">Finding titles are matched exactly after case and punctuation normalization.</EmptyState>}
+        </Panel>
+      </div>
+      <div className="small muted"><b>Review limitations</b><ul>{q.data.limitations.map((item) => <li key={item}>{item}</li>)}</ul></div>
+    </div>}
+  </Panel>;
+}
+
+interface ForecastEvaluationData {
+  status: string;
+  matched_count: number;
+  valid_time_tolerance_hours: number;
+  summary: { metric: string; unit: string; matched_count: number; mean_absolute_error: number; mean_bias: number }[];
+  matches: { metric: string; entity: string; unit: string; forecast: number; observation: number; absolute_error: number; forecast_issued_at: string; observed_at: string; lead_hours: number }[];
+  limitations: string[];
+}
+
+function ForecastEvaluation({ days }: { days: number }) {
+  const { cityId } = useCity();
+  const q = useQuery({
+    queryKey: ["forecast-evaluation", cityId, days],
+    queryFn: () => api<ForecastEvaluationData>(`/cities/${cityId}/forecast-evaluation`, { query: { days, window_hours: 3 } }),
+  });
+  return <Panel title={`Forecast evaluation (${days} days)`} icon="analytics">
+    {q.error ? <ErrorState error={q.error} onRetry={() => void q.refetch()} /> : !q.data ? <LoadingBlock rows={3} /> : q.data.status !== "evaluated" ?
+      <EmptyState title="Not enough matched live data">Forecasts and observations must share a metric, entity and unit, and their valid times must be within three hours.</EmptyState> : <div className="stack-lg">
+        <div className="table-wrap"><table className="table"><thead><tr><th>Metric</th><th>Matched pairs</th><th>Mean absolute error</th><th>Mean bias</th></tr></thead>
+          <tbody>{q.data.summary.map((item) => <tr key={`${item.metric}-${item.unit}`}><td>{item.metric} ({item.unit})</td><td className="num">{item.matched_count}</td><td className="num">{fmtNum(item.mean_absolute_error)} {item.unit}</td><td className="num">{fmtNum(item.mean_bias)} {item.unit}</td></tr>)}</tbody>
+        </table></div>
+        {!!q.data.matches.length && <details><summary className="small">Recent matched pairs ({q.data.matched_count})</summary><div className="table-wrap" style={{ marginTop: 8 }}><table className="table">
+          <thead><tr><th>Metric / entity</th><th>Forecast</th><th>Observed</th><th>Abs. error</th><th>Lead</th><th>Times</th></tr></thead>
+          <tbody>{q.data.matches.slice(0, 30).map((item, index) => <tr key={`${item.metric}-${item.entity}-${item.observed_at}-${index}`}>
+            <td>{item.metric}<div className="xs faint">{item.entity}</div></td><td className="num">{fmtNum(item.forecast)} {item.unit}</td><td className="num">{fmtNum(item.observation)} {item.unit}</td>
+            <td className="num">{fmtNum(item.absolute_error)}</td><td className="num">{fmtNum(item.lead_hours)} h</td>
+            <td className="xs muted">Issued {item.forecast_issued_at}<br />Observed {item.observed_at}</td>
+          </tr>)}</tbody>
+        </table></div></details>}
+        <div className="small muted"><b>Method and limitations</b><ul>{q.data.limitations.map((item) => <li key={item}>{item}</li>)}</ul></div>
+      </div>}
+  </Panel>;
 }
 
 function CityCompare() {

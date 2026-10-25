@@ -139,7 +139,7 @@ def streetlights(ctx: AgentContext) -> AgentResult:
     return ok(f"{len(open_reqs)} open streetlight complaints; switching schedule derived from sunrise/sunset.", confidence=0.7,
               method="rules:astronomical_schedule", findings=findings, provenance=prov,
               metrics={"schedule": schedule, "open_complaints": len(open_reqs), "complaints_30d": len(reqs)},
-              extra_refs=[records_ref("service_requests", len(reqs), {r.provenance for r in reqs} or {"operator"})],
+              extra_refs=[records_ref("service_requests", len(reqs), {r.provenance for r in reqs} or {"operator"}, request_ids=(r.id for r in reqs))],
               limitations=["Schedules assume photocell-free timer control; adjust offsets to local practice."])
 
 
@@ -147,11 +147,11 @@ def outage_triage(ctx: AgentContext) -> AgentResult:
     incs = ctx.data.incidents(categories=("energy", "water", "utility"))
     if not incs:
         return ok("No open utility outages.", confidence=0.8, method="rules:priority_score", provenance={"operator"},
-                  metrics={"open": 0, "ranked": []}, extra_refs=[records_ref("incidents", 0, ["operator"])])
+                  metrics={"open": 0, "ranked": []}, extra_refs=[records_ref("incidents", 0, ["operator"], incident_ids=[])])
     ranked = sorted(incs, key=lambda i: (-SEVERITY_WEIGHT[i.severity], -age_hours(ctx.now, i.reported_at)))
     return ok(f"{len(incs)} open utility incidents; most severe: {ranked[0].title}.", confidence=0.75, method="rules:priority_score",
               metrics={"open": len(incs), "by_category": {c: sum(1 for i in incs if i.category == c) for c in {i.category for i in incs}},
                        "ranked": [{"id": i.id, "title": i.title, "severity": i.severity, "category": i.category,
                                    "age_h": round(age_hours(ctx.now, i.reported_at), 1)} for i in ranked[:10]]},
               findings=[finding(i.title, f"{i.category} · {i.severity}", i.severity, i.lat, i.lon) for i in ranked[:5]],
-              extra_refs=[records_ref("incidents", len(incs), [i.provenance for i in incs])], provenance={i.provenance for i in incs})
+              extra_refs=[records_ref("incidents", len(incs), [i.provenance for i in incs], incident_ids=(i.id for i in incs))], provenance={i.provenance for i in incs})

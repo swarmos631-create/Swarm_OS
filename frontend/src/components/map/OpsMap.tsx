@@ -8,7 +8,8 @@ import { Icon } from "../../lib/icons";
 import { useTheme } from "../../state/theme";
 import { Gauge, Meter } from "../ui/widgets";
 import { MapControls, type MapLike, POINT_COLORS } from "./mapkit";
-import { type MapPoint, MapplsCanvas } from "./mappls";
+import { MapCanvas } from "./MapCanvas";
+import { type MapPoint } from "./mappls";
 
 type FC = GeoJSON.FeatureCollection<GeoJSON.Point, Record<string, any>>;
 const WANTED = ["incidents", "earthquake", "hospital", "fire_station", "police", "traffic_sensors", "water_sensors"];
@@ -23,12 +24,13 @@ export interface OpsMapProps {
   onToggle3d: () => void;
 }
 
-/** Dashboard hero map: MapmyIndia city map (tilts in 3D) with live incident/facility points, round controls and a summary card. */
+/** Dashboard hero map with the configured provider or keyless OpenFreeMap fallback, incident/facility points, controls and a summary card. */
 export default function OpsMap({ city, dashboard: d, severity, showIncidents, showFacilities, mode3d, onToggle3d }: OpsMapProps) {
   const { theme } = useTheme();
   const pal = POINT_COLORS[theme];
   const wrap = useRef<HTMLDivElement>(null);
   const [mpl, setMpl] = useState<MapLike | null>(null);
+  const [mapProvider, setMapProvider] = useState<"mappls" | "openfreemap">("openfreemap");
   const [failed, setFailed] = useState<string | null>(null);
 
   const layersQ = useQuery({
@@ -76,8 +78,8 @@ export default function OpsMap({ city, dashboard: d, severity, showIncidents, sh
   return (
     <div className="ops-map" ref={wrap}>
       <div className="ops-map-canvas">
-        <MapplsCanvas center={{ lat: city.lat, lon: city.lon }} zoom={mode3d ? 16.5 : 13} points={points} mode3d={mode3d} theme={theme} onReady={setMpl}
-          label={`MapmyIndia map of ${city.name}`} onFail={(msg) => setFailed(`${msg}. Incidents and indicators are still shown on this page.`)} />
+        <MapCanvas center={{ lat: city.lat, lon: city.lon }} zoom={mode3d ? 16.5 : 13} points={points} mode3d={mode3d} theme={theme} onReady={setMpl} onProviderChange={setMapProvider}
+          label={`City map of ${city.name}`} onFail={(msg) => setFailed(`${msg}. Incidents and indicators are still shown on this page.`)} />
       </div>
       {failed && <div className="notice error ops-map-error"><Icon name="alert" />{failed}</div>}
 
@@ -124,7 +126,7 @@ export default function OpsMap({ city, dashboard: d, severity, showIncidents, sh
       </aside>
 
       <MapControls map={ctl} mode3d={mode3d} onToggle3d={onToggle3d} onFit={() => ctl?.fitBounds(city.bbox as [number, number, number, number], { padding: 30, duration: 900 })} fullscreenTarget={wrap} />
-      <div className="ops-map-foot xs faint"><span>© MapmyIndia · Scroll to zoom · 3D tilts the view</span><span>Points refresh every 2 minutes</span></div>
+      <div className="ops-map-foot xs faint"><span>{mapProvider === "mappls" ? "© Mappls" : "OpenFreeMap · OpenMapTiles · © OpenStreetMap"} · tile requests expose the viewed area · 3D tilts the view</span><span>Points refresh every 2 minutes</span></div>
     </div>
   );
 }

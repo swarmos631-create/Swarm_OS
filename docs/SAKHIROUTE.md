@@ -1,0 +1,31 @@
+# SakhiRoute — constrained route-comparison MVP
+
+SakhiRoute is a transparent route comparison tool for women and other residents. It accepts start and destination coordinates and a travel mode; when the domain-restricted Mappls key has Place Search enabled, it also provides Indian address/place suggestions. Search text is sent to Mappls. Users can select points on the configured map or enter coordinates manually. The routed coordinates are sent to the public FOSSGIS routing service only after the user submits the form. FOSSGIS states that route requests are recorded in server logs. The page explains these data flows before use.
+
+## Routing
+
+The API calls the FOSSGIS-hosted OSRM service using OpenStreetMap road data. Route geometry is returned as GeoJSON and the interface can display up to three alternatives with estimated distance and time. Routing is best-effort, has no SLA, is not live traffic or transit routing, and may return fewer alternatives than requested. The service asks clients to keep requests to at most one per second.
+
+Sources:
+
+* [OSRM Route API](https://project-osrm.org/docs/v5.24.0/api/) documents route alternatives, GeoJSON geometry, distance and duration.
+* [FOSSGIS routing service information](https://routing.openstreetmap.de/about.html) describes profiles, request logging, attribution and the one-request-per-second policy.
+* [FOSSGIS project page](https://www.fossgis.de/aktivitaeten/langzeitfoerderungen/osrm/) says its service supports driving, cycling and pedestrian profiles.
+* [OpenStreetMap attribution guidance](https://www.openstreetmap.org/copyright) explains ODbL data attribution.
+
+## Mapped context
+
+For each returned path, SwarmOS counts currently open/acknowledged/in-progress incident points sampled within 250 m, live/cached OpenStreetMap help facilities (police, clinic, hospital, fire station) within 500 m, and mapped bus/rail stations within 500 m. Incident points remain aggregate-only in this public response. For matching mapped facilities/stations, the response also returns up to 25 nearest source references with source ID, external feature ID, layer, provenance, approximate distance to sampled route points, and fetched/observed timestamps; OSM Overpass references link to their public map object where a stable OSM object ID is available. Counts include all matching features even when the evidence list is capped. Context is derived from records already held for that city; no extra route-specific source request is made. OSM transit stations are community mapped, and a nearby station count does not show route coverage, service hours, or whether service is operating. Where stored facility or station records carry an OSM `wheelchair=*` value, SakhiRoute reports nearby counts for `yes`, `limited`, `no`, `designated`, and `unknown`. OSM says there is no default wheelchair value, so `unknown` means no recognized tag was stored; it does not mean accessible. These are community-mapped place attributes, not verified audits or route accessibility checks. See OSM's [wheelchair tagging guidance](https://wiki.openstreetmap.org/wiki/Key%3Awheelchair), [bus stop](https://wiki.openstreetmap.org/wiki/Tag%3Ahighway%3Dbus_stop), and [public transport platform](https://wiki.openstreetmap.org/wiki/Tag%3Apublic_transport%3Dplatform) guidance.
+
+These counts are not a personal-safety score or accessibility rating. Zero incidents, a missing facility, a gap in mapped coverage, an unknown wheelchair tag, or a shorter travel time does not indicate that a route is safe or accessible. Route paths are sampled for context counts and are not turn-by-turn verification.
+
+## Privacy, safety and operations
+
+* SwarmOS does not persist the origin, destination, route geometry, or route history.
+* The public endpoint is city-scoped and rejects endpoints more than 150 km from the selected city centre.
+* The endpoint uses a hashed-client-key rate limit shared through PostgreSQL, plus a best-effort per-process FOSSGIS rate guard. Fixed-window client limits can allow a short burst across a boundary.
+* A public provider can log coordinates and may be unavailable. Do not send sensitive origins without user consent; the user must initiate each route request.
+* The map context only reflects available data in SwarmOS. It does not contact emergency services, verify facility opening hours, assess lighting, or provide incident response.
+* For production traffic or stronger privacy guarantees, deploy an owned OSRM/FOSSGIS-compatible routing instance or contract with a provider whose terms and data handling have been reviewed.
+
+The UI accepts manual latitude/longitude, optional Mappls address search, and clicking the configured map to set start or destination. Mappls remains optional: when its browser key is missing or its SDK fails, MapLibre renders the keyless OpenFreeMap/OpenStreetMap base map with attribution, route polylines, and click-to-set selection. A schematic route preview is shown only if the interactive map fails. Map tile requests expose the viewed map area to the selected tile provider. Street lighting is not measured or inferred. Live closures, transit schedules, audited facility accessibility, accessible-route validation, and independently evaluated predictive safety models are not implemented. The demo must not be marketed as a verified women’s safety service.

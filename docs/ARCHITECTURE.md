@@ -6,11 +6,11 @@ The modules have clear boundaries, so any of them can be extracted later if load
 
 ```
 frontend/ (React + TS + Vite PWA)  ──HTTP /api/v1──▶  backend/swarmos
-                                                     ├── api/          routers (auth, cities, incidents, agents, platform)
+                                                     ├── api/          routers (auth, cities, incidents, agents, platform, routes)
                                                      ├── core/         security, errors, logging, rate limit, audit
                                                      ├── cities/       city registry (data/cities.json → DB)
                                                      ├── integrations/ adapters, HTTP client, sync + freshness
-                                                     ├── services/     CityData read facade, task + approval workflows
+                                                     ├── services/     CityData read facade, evidence, routing, consensus, task + approval workflows
                                                      ├── agents/       contracts, 50-agent registry, skills, planner, orchestrator
                                                      ├── ai/           ModelRuntime (sklearn / Ollama / llama.cpp / rules), retrieval
                                                      ├── ml/           features, synthetic data, datasets, training pipeline
@@ -39,8 +39,10 @@ On Vercel the same code runs as two services: the PWA as static files and the AP
 | `measurements` | Time series. `kind` ∈ observation / model_analysis / forecast; `provenance` ∈ live / demo / …; unique on (city, source, metric, entity, kind, time) |
 | `geo_features` | Point features (OSM facilities, USGS events, demo assets). Global features have `city_id = NULL` and are queried by distance. |
 | `incidents`, `incident_events` | Incident workflow with an allowed-transition matrix and an optimistic-concurrency `version` |
+| `incident_evidence` | Audited links from incidents to city-scoped persisted source records, with relationship and operator note |
 | `service_requests` | Citizen complaints with classifier label, confidence and `classified_by` |
 | `agent_tasks`, `agent_executions`, `agent_handoffs` | Orchestration state, per-agent I/O, errors, durations, and hashed handoff payloads |
+| `scenario_runs` | Saved what-if parameters linked to durable agent tasks; simulation outputs remain in the execution record |
 | `proposed_actions` | Recommendations awaiting human decision, with evidence and compliance review |
 | `jobs` | Durable queue with leases, retries, dedupe keys and correlation IDs |
 | `model_versions` | Model registry: metrics, baseline, dataset manifest, artifact checksum, gate result, status |
@@ -108,6 +110,8 @@ designed idempotency and authorization semantics would be unsafe.
 ## API
 
 Interactive OpenAPI docs are at `/api/docs` (disabled in production). Main resources, all under `/api/v1`:
-`auth/*`, `cities`, `cities/{id}/dashboard|series|map/layers|map/features|incidents|service-requests|tasks|tasks/plan|actions|integrations|documents|analytics`,
+`auth/*`, `cities`, `cities/{id}/dashboard|series|map/layers|map/features|incidents|service-requests|tasks|tasks/plan|actions|integrations|documents|analytics|scenarios`,
 `agents`, `integrations`, `models/*`, `notifications`, `system/status|audit|users`. Health: `/api/health/live`, `/api/health/ready`.
 List endpoints share `limit`/`offset` pagination and return `{items, total, limit, offset}`.
+
+Public routes are limited to text-only citizen requests, private-reference status lookup, and a user-initiated SakhiRoute request. Citizen lookup returns no report text or internal notes. Route coordinates are not stored by SwarmOS but are sent to the public routing provider, which may log them. See [API.md](API.md) and [SAKHIROUTE.md](SAKHIROUTE.md).

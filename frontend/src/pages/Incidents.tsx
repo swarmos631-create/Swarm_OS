@@ -2,8 +2,8 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import { useState } from "react";
 
 import { api, ApiError } from "../api/client";
-import type { Incident, Page } from "../api/types";
-import { Dialog, Drawer, EmptyState, ErrorState, Field, LoadingBlock, Panel, ProvenanceBadge, SeverityBadge, StatusBadge, Tabs } from "../components/ui";
+import type { Incident, IncidentEvidence, Page } from "../api/types";
+import { Dialog, Drawer, EmptyState, ErrorState, Field, FreshnessBadge, LoadingBlock, Panel, ProvenanceBadge, SeverityBadge, StatusBadge, Tabs } from "../components/ui";
 import { ago, fmtTime, titleCase } from "../lib/format";
 import { Icon } from "../lib/icons";
 import { useCity } from "../state/city";
@@ -160,6 +160,7 @@ function IncidentDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   const qc = useQueryClient();
   const toast = useToast();
   const [note, setNote] = useState("");
+  const [linking, setLinking] = useState(false);
   const q = useQuery({ queryKey: ["incident", cityId, id], queryFn: () => api<Incident>(`/cities/${cityId}/incidents/${id}`) });
   const m = useMutation({
     mutationFn: (body: Record<string, unknown>) => api<Incident>(`/cities/${cityId}/incidents/${id}`, { method: "PATCH", body: { ...body, version: q.data?.version } }),
@@ -210,6 +211,17 @@ function IncidentDrawer({ id, onClose }: { id: string; onClose: () => void }) {
               </div>
             </div>
           ) : <div className="notice info"><Icon name="info" />Viewer accounts cannot modify incidents.</div>}
+          <Panel title={`Evidence (${inc.evidence?.length ?? 0})`} icon="database" actions={can("operator") && <button className="btn sm" disabled={!online} onClick={() => setLinking((value) => !value)}><Icon name="plus" />Link evidence</button>}>
+            {inc.evidence?.length ? <ul className="list">
+              {inc.evidence.map((evidence) => <EvidenceCard key={evidence.id} evidence={evidence} cityId={cityId} incidentId={id} canEdit={can("operator")} onChanged={() => { void qc.invalidateQueries({ queryKey: ["incident", cityId, id] }); void qc.invalidateQueries({ queryKey: ["incidents", cityId] }); }} />)}
+            </ul> : <p className="small faint" style={{ margin: 0 }}>No evidence has been linked yet. Missing records are not treated as proof that an incident did not occur.</p>}
+          </Panel>
+          {linking && can("operator") && <LinkEvidence cityId={cityId} incidentId={id} onClose={() => setLinking(false)} onLinked={() => {
+            setLinking(false);
+            toast("ok", "Evidence linked to incident");
+            void qc.invalidateQueries({ queryKey: ["incident", cityId, id] });
+            void qc.invalidateQueries({ queryKey: ["incidents", cityId] });
+          }} />}
           <div>
             <div className="upper faint" style={{ marginBottom: 6 }}>Timeline</div>
             <ul className="list">
@@ -224,6 +236,80 @@ function IncidentDrawer({ id, onClose }: { id: string; onClose: () => void }) {
       )}
     </Drawer>
   );
+}
+
+const EVIDENCE_TYPES = [
+  ["measurement", "Measurements"], ["agent_execution", "Agent findings"], ["service_request", "Service requests"],
+  ["feature", "Mapped features"], ["proposed_action", "Proposed actions"],
+] as const;
+type EvidenceType = typeof EVIDENCE_TYPES[number][0];
+
+type EvidenceOption = Omit<IncidentEvidence, "id" | "relationship" | "note" | "created_at">;
+
+function LinkEvidence({ cityId, incidentId, onClose, onLinked }: { cityId: string; incidentId: string; onClose: () => void; onLinked: () => void }) {
+  const [sourceType, setSourceType] = useState<EvidenceType>("agent_execution");
+  const [sourceId, setSourceId] = useState("");
+  const [relationship, setRelationship] = useState<"supports" | "contradicts" | "context">("context");
+  const [note, setNote] = useState("");
+  const toast = useToast();
+  const candidates = useQuery({
+    queryKey: ["incident-evidence-candidates", cityId, incidentId, sourceType],
+    queryFn: () => api<{ items: EvidenceOption[] }>(`/cities/${cityId}/incidents/${incidentId}/evidence/candidates`, { query: { source_type: sourceType } }),
+  });
+  const add = useMutation({
+    mutationFn: () => api<IncidentEvidence>(`/cities/${cityId}/incidents/${incidentId}/evidence`, {
+      method: "POST", body: { source_type: sourceType, source_id: sourceId, relationship, note: note.trim() },
+    }),
+    onSuccess: onLinked,
+    onError: (error) => toast("err", error instanceof ApiError ? error.message : "Evidence could not be linked"),
+  });
+  return <Dialog title="Link existing evidence" onClose={onClose} footer={<>
+    <button className="btn ghost" type="button" onClick={onClose}>Cancel</button>
+    <button className="btn primary" type="button" disabled={!sourceId || note.trim().length < 6 || add.isPending} onClick={() => add.mutate()}>{add.isPending ? "Linking…" : "Link evidence"}</button>
+  </>}>
+    <div className="stack-lg">
+      <p className="small muted" style={{ margin: 0 }}>Links point to existing city records. They preserve the record’s provenance and are not an independent verification.</p>
+      <Field label="Evidence record type"><select className="select" value={sourceType} onChange={(event) => { setSourceType(event.target.value as EvidenceType); setSourceId(""); }}>
+        {EVIDENCE_TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+      </select></Field>
+      <Field label="Record"><select className="select" value={sourceId} onChange={(event) => setSourceId(event.target.value)} disabled={!candidates.data?.items.length}>
+        <option value="">{candidates.isLoading ? "Loading available records…" : candidates.data?.items.length ? "Choose a record" : "No records available"}</option>
+        {(candidates.data?.items ?? []).map((candidate) => <option key={candidate.source_id} value={candidate.source_id}>{candidate.label} — {candidate.summary.slice(0, 100)}</option>)}
+      </select></Field>
+      {candidates.error && <ErrorState error={candidates.error} onRetry={() => void candidates.refetch()} />}
+      <Field label="Relationship"><select className="select" value={relationship} onChange={(event) => setRelationship(event.target.value as typeof relationship)}>
+        <option value="supports">Supports the incident claim</option><option value="contradicts">Contradicts the incident claim</option><option value="context">Context only</option>
+      </select></Field>
+      <Field label="Why is this evidence relevant?" hint="Required for audit; describe the connection without overstating what the source proves."><textarea className="textarea" value={note} onChange={(event) => setNote(event.target.value)} maxLength={1000} rows={3} /></Field>
+    </div>
+  </Dialog>;
+}
+
+function EvidenceCard({ evidence, cityId, incidentId, canEdit, onChanged }: {
+  evidence: IncidentEvidence; cityId: string; incidentId: string; canEdit: boolean; onChanged: () => void;
+}) {
+  const toast = useToast();
+  const remove = useMutation({
+    mutationFn: () => api<void>(`/cities/${cityId}/incidents/${incidentId}/evidence/${evidence.id}`, { method: "DELETE" }),
+    onSuccess: () => { toast("ok", "Evidence link removed"); onChanged(); },
+    onError: (error) => toast("err", error instanceof ApiError ? error.message : "Evidence link could not be removed"),
+  });
+  return <li style={{ display: "block" }}>
+    <div className="row between wrap">
+      <div className="row wrap"><span className={`badge ${evidence.relationship === "supports" ? "b-ok" : evidence.relationship === "contradicts" ? "b-error" : "b-records"}`}>{titleCase(evidence.relationship)}</span>
+        <span className="badge b-records">{titleCase(evidence.source_type)}</span>
+        {Array.isArray(evidence.provenance) ? evidence.provenance.map((p) => <ProvenanceBadge key={p} p={p} />) : <ProvenanceBadge p={evidence.provenance} />}
+        {evidence.freshness && <FreshnessBadge f={evidence.freshness} />}
+      </div>
+      {canEdit && <button className="btn sm ghost" type="button" disabled={remove.isPending} onClick={() => remove.mutate()} aria-label={`Unlink ${evidence.label}`}>Unlink</button>}
+    </div>
+    <div className="stack" style={{ gap: 4, marginTop: 7 }}>
+      <b className="small">{evidence.label}</b><span className="small muted">{evidence.summary}</span>
+      {evidence.note && <span className="small">Operator note: {evidence.note}</span>}
+      <span className="xs faint">{evidence.source ?? "Source unavailable"}{evidence.observed_at ? ` · observed ${fmtTime(evidence.observed_at)}` : ""}{evidence.fetched_at ? ` · fetched ${fmtTime(evidence.fetched_at)}` : ""}</span>
+      {!!evidence.limitations.length && <span className="xs muted">Limitations: {evidence.limitations.join(" · ")}</span>}
+    </div>
+  </li>;
 }
 
 interface SR { id: string; text: string; category: string | null; category_confidence: number | null; classified_by: string | null; department: string | null; status: string; ward: string | null; provenance: string; created_at: string }
@@ -249,15 +335,7 @@ function RequestList() {
         {list.error ? <div className="panel-body"><ErrorState error={list.error} /></div> : !list.data ? <div className="panel-body"><LoadingBlock /></div> : list.data.items.length === 0 ? <EmptyState title="No service requests">Requests logged by operators will appear here.</EmptyState> : (
           <div className="table-wrap"><table className="table">
             <thead><tr><th>Request</th><th>Category</th><th>Department</th><th>Status</th><th>Created</th><th>Source</th></tr></thead>
-            <tbody>{list.data.items.map((r) => (
-              <tr key={r.id}>
-                <td style={{ maxWidth: 360 }}>{r.text}<div className="xs faint">{r.ward}</div></td>
-                <td>{titleCase(r.category ?? "—")}{r.category_confidence != null && <div className="xs faint">{Math.round(r.category_confidence * 100)}% · {r.classified_by}</div>}</td>
-                <td className="small muted">{r.department ?? "—"}</td>
-                <td><StatusBadge s={r.status} /></td>
-                <td className="small muted">{ago(r.created_at)}</td>
-                <td><ProvenanceBadge p={r.provenance} /></td>
-              </tr>))}</tbody>
+            <tbody>{list.data.items.map((r) => <RequestRow key={r.id} request={r} cityId={cityId} canEdit={can("operator")} />)}</tbody>
           </table></div>
         )}
         {list.data && list.data.total > PAGE && (
@@ -281,4 +359,25 @@ function RequestList() {
       </Panel>
     </div>
   );
+}
+
+function RequestRow({ request: r, cityId, canEdit }: { request: SR; cityId: string; canEdit: boolean }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const update = useMutation({
+    mutationFn: (status: "open" | "in_progress" | "resolved") => api<SR>(`/cities/${cityId}/service-requests/${r.id}`, { method: "PATCH", body: { status } }),
+    onSuccess: () => { toast("ok", "Service request status updated"); void qc.invalidateQueries({ queryKey: ["requests", cityId] }); },
+    onError: (error) => toast("err", error instanceof ApiError ? error.message : "Status could not be updated"),
+  });
+  return <tr>
+    <td style={{ maxWidth: 360 }}>{r.text}<div className="xs faint">{r.ward}</div></td>
+    <td>{titleCase(r.category ?? "—")}{r.category_confidence != null && <div className="xs faint">{Math.round(r.category_confidence * 100)}% · {r.classified_by}</div>}</td>
+    <td className="small muted">{r.department ?? "—"}</td>
+    <td>{canEdit ? <select className="select" aria-label={`Update status for request ${r.id}`} value={r.status} disabled={update.isPending || r.status === "acknowledged"} onChange={(event) => update.mutate(event.target.value as "open" | "in_progress" | "resolved")}>
+      <option value="open">Open</option><option value="in_progress">In progress</option><option value="resolved">Resolved</option>
+      {r.status === "acknowledged" && <option value="acknowledged">Acknowledged</option>}
+    </select> : <StatusBadge s={r.status} />}</td>
+    <td className="small muted">{ago(r.created_at)}</td>
+    <td><ProvenanceBadge p={r.provenance} /></td>
+  </tr>;
 }

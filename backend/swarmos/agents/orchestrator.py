@@ -328,7 +328,9 @@ class Orchestrator:
                     rationale=a.rationale, risk=a.risk, required_role=required,
                     payload={**a.payload, "_evidence": {"provenance": res.provenance, "confidence": res.confidence,
                                                          "agent_status": res.status,
-                                                         "demo_basis": bool({"demo", "synthetic"} & set(res.provenance))},
+                                                         "demo_basis": bool({"demo", "synthetic"} & set(res.provenance)),
+                                                         "data_refs": res.data_refs[:20],
+                                                         "limitations": res.limitations[:20]},
                              "_compliance": review},
                 )
                 db.add(row)

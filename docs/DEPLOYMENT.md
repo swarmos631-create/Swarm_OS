@@ -1,5 +1,39 @@
 # Deployment and operations
 
+## Railway: complete single-service deployment
+
+The repository-root `Dockerfile` builds the React PWA, installs the FastAPI backend with its local ML extras, serves
+the frontend from that API origin, and runs the persistent job worker in the API process. `railway.json` configures
+the Docker build, readiness check, and restart policy. Railway injects `PORT`; the container listens on it. The app
+requires PostgreSQL for durable production state; do not use SQLite on an ephemeral container filesystem.
+
+1. In the Railway project, connect the Swarm_OS GitHub repository or deploy this repository from the Railway CLI.
+   Keep the repository root as the service root so Railway can find `railway.json` and `Dockerfile`.
+2. Add a Railway PostgreSQL service. On the app service, set `SWARMOS_DATABASE_URL` to a Railway reference to that
+   database's `DATABASE_URL` (for example `${{Postgres.DATABASE_URL}}`; use the actual Railway service name).
+3. Configure these service variables before exposing the public domain:
+   * `SWARMOS_ENV=production`
+   * `SWARMOS_AUTH_DISABLED=false`
+   * `SWARMOS_DEMO_MODE=false`
+   * `SWARMOS_JOB_MODE=worker` and `SWARMOS_WORKER_EMBEDDED=true`
+   * `SWARMOS_TRUSTED_HOSTS=<the generated Railway hostname>`
+   * `SWARMOS_CRON_SECRET=<a generated random secret>` for one-time bootstrap and the internal scheduler endpoint
+   * Optional free data credentials such as `SWARMOS_OGD_API_KEY`, stored as Railway variables only. No hosted LLM
+     provider keys are needed or supported for the project-owned agent runtime.
+4. Deploy and wait for `/api/health/ready` to pass. The container runs `swarmos migrate` before serving. Set up the
+   first admin by POSTing `/api/internal/bootstrap` with `Authorization: Bearer $SWARMOS_CRON_SECRET` and a
+   strong admin password in the JSON body. Do not place that password in Git or a public deployment log. The
+   bootstrap endpoint migrates and seeds the database without demo data and creates the admin idempotently.
+5. Sign in through the generated Railway domain and verify dashboard, data integrations, scenario jobs, incident
+   evidence, citizen intake, reports, and SakhiRoute. Keep PostgreSQL private to the project; only the app needs
+   database access.
+
+The embedded worker suits a first single-instance Railway deployment. For multiple API replicas, turn off the
+embedded worker and add a dedicated `swarmos worker` service. PostgreSQL-backed public endpoint limits are shared;
+the provider-specific FOSSGIS pacing guard remains best-effort per process. Railway billing and resource limits depend on the selected plan. A free API provider may still require the
+operator to register and enter its own key. No deployment can be considered complete until the database variables,
+bootstrap admin, public domain, and health check have been verified in Railway.
+
 ## Topologies
 
 * **Single node (default):** `swarmos serve` runs the API, the embedded worker and the PWA (from `frontend/dist`) on one port. Put HTTPS in front of it.
@@ -27,8 +61,9 @@ are re-queued automatically.
 
 Health checks: liveness `GET /api/health/live`; readiness `GET /api/health/ready` (database, migrations, agent registry).
 
-Docker is not required. A container image only needs Python 3.11+, the backend package and `frontend/dist`. This
-repository does not ship a Dockerfile, because the target machine had no Docker to verify one.
+Docker is not required for direct deployments. The repository includes a root `Dockerfile` for Railway's Docker
+builder, which builds the PWA and installs the FastAPI backend. It has not been container-built in this environment
+because Docker and Podman are unavailable; the frontend production bundle and backend tests are verified separately.
 
 ## Render API + Vercel frontend
 
@@ -64,6 +99,9 @@ Notes:
   Switch the service to the Starter plan in Render to keep it awake (and the embedded worker running).
 * **Jobs:** the embedded worker runs syncs, agent tasks and training in the same process. No Vercel cron is used.
 * **Bootstrap endpoint:** `POST /api/internal/bootstrap` (below) works on Render too if you set `CRON_SECRET` there.
+* **Schema updates:** this branch adds Alembic revisions `0003` (incident evidence links), `0004` (saved scenario runs), `0005` (situation reports), `0006` (intervention outcomes), and `0007` (shared rate-limit counters). Render and the Railway Docker start command run `swarmos migrate` before serving. For manual or separate-worker deployments, back up PostgreSQL, deploy the code, run `cd backend && swarmos migrate`, then check `/api/health/ready` before routing users to it.
+* **Public endpoints:** citizen intake/reference lookup and SakhiRoute use hashed-client-key counters in PostgreSQL, shared across API replicas. Fixed-window limits may allow a boundary burst; an edge/Redis sliding-window limiter is stronger for high-traffic public exposure.
+* **Optional data key:** `SWARMOS_OGD_API_KEY` enables the data.gov.in CPCB feed. Obtain the free key directly from data.gov.in and set it as a Render secret; do not place it in Vercel or Git. See [DATA_SOURCES.md](DATA_SOURCES.md).
 
 ## Vercel (API and frontend together, previous setup)
 

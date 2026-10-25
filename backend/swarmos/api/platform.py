@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import re
 from datetime import timedelta
+from math import isfinite
 from pathlib import Path
 from typing import Any, Literal
 
@@ -11,6 +13,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
+from swarmos.agents.registry import REGISTRY
 from swarmos.ai import retrieval
 from swarmos.ai.runtime import get_runtime
 from swarmos.api.common import PageParams, iso, page_params, paginate
@@ -233,6 +236,88 @@ def search_documents(q: str = Query(..., min_length=2, max_length=300), city: Ci
 # ----------------------------------------------------------------------------- analytics
 
 
+@router.get("/cities/{city_id}/impact-review", tags=["analytics"])
+def impact_review(days: int = Query(30, ge=1, le=90), limit_tasks: int = Query(100, ge=1, le=200),
+                  city: City = Depends(city_access), db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Find descriptive cross-task signals for human review; this does not estimate causal impact."""
+    since = utcnow() - timedelta(days=days)
+    tasks = list(db.scalars(select(AgentTask).where(
+        AgentTask.city_id == city.id, AgentTask.created_at >= since,
+        AgentTask.status.in_(("succeeded", "partial")),
+    ).order_by(AgentTask.created_at.desc()).limit(limit_tasks)))
+    task_by_id = {task.id: task for task in tasks}
+    if not task_by_id:
+        return {"city_id": city.id, "window_days": days, "tasks_reviewed": 0,
+                "metric_relationships": [], "finding_relationships": [], "limitations": [
+                    "Only persisted successful or partial runs are included.",
+                    "Repeated signals are descriptive co-occurrences, not evidence that one domain caused another.",
+                ]}
+    executions = list(db.scalars(select(AgentExecution).where(
+        AgentExecution.task_id.in_(task_by_id), AgentExecution.status.in_(("succeeded", "degraded")),
+        AgentExecution.output.is_not(None),
+    ).order_by(AgentExecution.finished_at.desc())))
+    metric_groups: dict[str, list[dict[str, Any]]] = {}
+    finding_groups: dict[str, list[dict[str, Any]]] = {}
+
+    def emit_metrics(values: Any, prefix: str, depth: int, execution: AgentExecution, task: AgentTask, domain: str,
+                     provenance: list[str], refs: list[dict[str, Any]]) -> None:
+        if not isinstance(values, dict) or depth > 2:
+            return
+        for key, value in values.items():
+            path = f"{prefix}.{key}" if prefix else str(key)
+            if isinstance(value, dict):
+                emit_metrics(value, path, depth + 1, execution, task, domain, provenance, refs)
+            elif isinstance(value, (int, float)) and not isinstance(value, bool) and isfinite(value):
+                metric_groups.setdefault(path, []).append({
+                    "task_id": task.id, "agent_id": execution.agent_id, "domain": domain,
+                    "task_created_at": iso(task.created_at), "execution_status": execution.status,
+                    "value": round(float(value), 6), "provenance": provenance,
+                    "evidence_refs": refs[:5],
+                })
+
+    for execution in executions:
+        task = task_by_id[execution.task_id]
+        spec = REGISTRY.get(execution.agent_id)
+        domain = spec.domain if spec else "unknown"
+        output = execution.output or {}
+        provenance = output.get("provenance", []) if isinstance(output.get("provenance", []), list) else []
+        refs = output.get("data_refs", []) if isinstance(output.get("data_refs", []), list) else []
+        emit_metrics(output.get("metrics", {}), "", 0, execution, task, domain, provenance, refs)
+        for finding in output.get("findings", []):
+            if not isinstance(finding, dict) or not isinstance(finding.get("title"), str):
+                continue
+            title = re.sub(r"[^a-z0-9]+", " ", finding["title"].lower()).strip()
+            if title:
+                finding_groups.setdefault(title, []).append({
+                    "title": finding["title"][:200], "task_id": task.id, "agent_id": execution.agent_id,
+                    "domain": domain, "task_created_at": iso(task.created_at),
+                    "severity": finding.get("severity", "info"), "provenance": provenance,
+                    "evidence_refs": refs[:5],
+                })
+
+    def cross_domain(items: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+        out = []
+        for signal, instances in items.items():
+            domains = sorted({item["domain"] for item in instances if item["domain"] != "unknown"})
+            task_ids = {item["task_id"] for item in instances}
+            if len(domains) < 2 or len(task_ids) < 2:
+                continue
+            out.append({"signal": signal, "task_count": len(task_ids), "domains": domains, "instances": instances[:12],
+                        "relationship": "cross_task_co_occurrence"})
+        return sorted(out, key=lambda item: (-item["task_count"], item["signal"]))[:20]
+
+    return {"city_id": city.id, "window_days": days, "tasks_reviewed": len(tasks),
+            "metric_relationships": cross_domain(metric_groups),
+            "finding_relationships": cross_domain(finding_groups),
+            "limitations": [
+                "Only exact metric paths and normalized exact finding titles are matched across separate tasks and domains.",
+                "Metric values may use different scales or assumptions; no values are averaged or ranked across agents.",
+                "Agent outputs can share inputs and may contain derived/modelled results; provenance and evidence references are shown for review.",
+                "A repeated signal is co-occurrence only. It does not show a causal relationship, independent verification, or a recommended intervention.",
+                "The review is limited to the newest successful/partial tasks within the selected time window and task cap.",
+            ]}
+
+
 @router.get("/cities/{city_id}/analytics", tags=["analytics"])
 def analytics(days: int = Query(14, ge=1, le=90), city: City = Depends(city_access), db: Session = Depends(get_db)) -> dict[str, Any]:
     now = utcnow()
@@ -286,6 +371,67 @@ def analytics(days: int = Query(14, ge=1, le=90), city: City = Depends(city_acce
                                               "severity": sev_dist, "category": cat_dist, "mttr_h": round(mttr, 2) if mttr else None,
                                               "provenance": sorted({i.provenance for i in incs})},
             "tasks": dict(tasks), "agent_executions": per_agent, "source_reliability": reliability, "environment": env}
+
+
+@router.get("/cities/{city_id}/forecast-evaluation", tags=["analytics"])
+def forecast_evaluation(days: int = Query(90, ge=1, le=180), window_hours: int = Query(3, ge=1, le=12),
+                       city: City = Depends(city_access), db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Evaluate forecasts against later, non-demo live/cached observations at nearby valid times."""
+    now = utcnow()
+    since = now - timedelta(days=days)
+    eligible = ("live", "cached")
+    forecasts = list(db.scalars(select(Measurement).where(
+        Measurement.city_id == city.id, Measurement.kind == "forecast", Measurement.provenance.in_(eligible),
+        Measurement.observed_at >= since, Measurement.observed_at <= now + timedelta(hours=window_hours),
+    ).order_by(Measurement.observed_at.desc()).limit(5000)))
+    observations = list(db.scalars(select(Measurement).where(
+        Measurement.city_id == city.id, Measurement.kind == "observation", Measurement.provenance.in_(eligible),
+        Measurement.observed_at >= since, Measurement.observed_at <= now,
+    ).order_by(Measurement.observed_at.desc()).limit(5000)))
+    index: dict[tuple[str, str, str], list[Measurement]] = {}
+    for forecast in forecasts:
+        index.setdefault((forecast.metric, forecast.entity, forecast.unit), []).append(forecast)
+    pairs: list[dict[str, Any]] = []
+    used_forecasts: set[int] = set()
+    tolerance = timedelta(hours=window_hours)
+    for observation in observations:
+        candidates = [forecast for forecast in index.get((observation.metric, observation.entity, observation.unit), [])
+                     if forecast.id not in used_forecasts
+                     and forecast.fetched_at <= observation.observed_at
+                     and abs(forecast.observed_at - observation.observed_at) <= tolerance]
+        if not candidates:
+            continue
+        forecast = min(candidates, key=lambda row: (abs(row.observed_at - observation.observed_at),
+                                                     -row.fetched_at.timestamp()))
+        used_forecasts.add(forecast.id)
+        pairs.append({
+            "metric": observation.metric, "entity": observation.entity, "unit": observation.unit,
+            "forecast": forecast.value, "observation": observation.value,
+            "error": round(forecast.value - observation.value, 4),
+            "absolute_error": round(abs(forecast.value - observation.value), 4),
+            "forecast_valid_at": iso(forecast.observed_at), "forecast_issued_at": iso(forecast.fetched_at),
+            "observed_at": iso(observation.observed_at),
+            "lead_hours": round((observation.observed_at - forecast.fetched_at).total_seconds() / 3600, 2),
+            "forecast_provenance": forecast.provenance, "observation_provenance": observation.provenance,
+        })
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for pair in pairs:
+        grouped.setdefault((pair["metric"], pair["unit"]), []).append(pair)
+    summary = [{"metric": metric, "unit": unit, "matched_count": len(rows),
+                "mean_absolute_error": round(sum(row["absolute_error"] for row in rows) / len(rows), 4),
+                "mean_bias": round(sum(row["error"] for row in rows) / len(rows), 4)}
+               for (metric, unit), rows in sorted(grouped.items())]
+    return {
+        "city_id": city.id, "window_days": days, "valid_time_tolerance_hours": window_hours,
+        "status": "evaluated" if pairs else "insufficient_data", "matched_count": len(pairs),
+        "summary": summary, "matches": pairs[:100],
+        "limitations": [
+            "Only live/cached forecasts issued before the valid time are compared with live/cached observations.",
+            "Pairs require exact metric, entity and unit matches and a valid-time difference within the selected tolerance.",
+            "The newest eligible forecast closest to each observation is selected once; forecast products and observation coverage may be non-representative.",
+            "Errors describe historical pairs and do not guarantee future forecast performance or establish causal impact.",
+        ],
+    }
 
 
 @router.get("/analytics/compare", tags=["analytics"])

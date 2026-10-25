@@ -13,11 +13,16 @@ const MapPage = lazy(() => import("./pages/MapPage"));
 const IncidentsPage = lazy(() => import("./pages/Incidents"));
 const WorkspacePage = lazy(() => import("./pages/Workspace"));
 const AgentsPage = lazy(() => import("./pages/Agents"));
+const MissionControlPage = lazy(() => import("./pages/MissionControl"));
+const ScenarioLabPage = lazy(() => import("./pages/ScenarioLab"));
 const AnalyticsPage = lazy(() => import("./pages/Analytics"));
 const IntegrationsPage = lazy(() => import("./pages/Integrations"));
 const ModelLabPage = lazy(() => import("./pages/ModelLab"));
 const SystemPage = lazy(() => import("./pages/System"));
 const SettingsPage = lazy(() => import("./pages/Settings"));
+const CitizenReportPage = lazy(() => import("./pages/CitizenReport"));
+const SakhiRoutePage = lazy(() => import("./pages/SakhiRoute"));
+const ReportsPage = lazy(() => import("./pages/Reports"));
 
 function DefaultCity() {
   const cities = useCities();
@@ -54,10 +59,14 @@ export function App() {
   const { me, loading, error, retry } = useSession();
   if (loading) return <div className="content"><LoadingBlock rows={4} /></div>;
   if (error) return <ApiUnavailable error={error} onRetry={retry} />;
-  if (!me) return <Routes><Route path="*" element={<LoginPage />} /></Routes>;
   const page = (el: React.ReactNode) => <Suspense fallback={<LoadingBlock rows={6} />}>{el}</Suspense>;
+  if (!me) return <Routes>
+    <Route path="/report/:cityId" element={page(<CitizenReportPage />)} />
+    <Route path="*" element={<LoginPage />} />
+  </Routes>;
   return (
     <Routes>
+      <Route path="/report/:cityId" element={page(<CitizenReportPage />)} />
       <Route path="/" element={<DefaultCity />} />
       <Route path="/c/:cityId" element={<CityGate />}>
         <Route index element={<CommandCenter />} />
@@ -65,6 +74,10 @@ export function App() {
         <Route path="incidents" element={page(<IncidentsPage />)} />
         <Route path="workspace" element={page(<WorkspacePage />)} />
         <Route path="agents" element={page(<AgentsPage />)} />
+        <Route path="mission-control" element={page(<MissionControlPage />)} />
+        <Route path="scenarios" element={page(<ScenarioLabPage />)} />
+        <Route path="sakhi-route" element={page(<SakhiRoutePage />)} />
+        <Route path="reports" element={page(<ReportsPage />)} />
         <Route path="analytics" element={page(<AnalyticsPage />)} />
         <Route path="integrations" element={page(<IntegrationsPage />)} />
         <Route path="models" element={page(<ModelLabPage />)} />

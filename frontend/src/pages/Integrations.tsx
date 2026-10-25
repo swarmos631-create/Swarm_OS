@@ -50,7 +50,10 @@ export default function IntegrationsPage() {
                         <div className="xs faint">{s.categories.join(", ")} · {s.kind}</div></td>
                       <td><StatusBadge s={c && !c.applies_to_city ? "unavailable" : s.status} label={c && !c.applies_to_city ? "Not for this city" : undefined} />
                         {s.status_detail && <div className="xs faint" style={{ maxWidth: 260 }}>{s.status_detail}</div>}</td>
-                      <td>{s.scope === "none" ? <span className="xs faint">n/a</span> : <FreshnessBadge f={c?.freshness} />}</td>
+                      <td>{s.scope === "none" ? <span className="xs faint">n/a</span> : <div className="stack" style={{ gap: 4 }}>
+                        <FreshnessBadge f={c?.freshness} />
+                        <span className="xs faint">{c?.last_success_at ? `Last successful sync ${fmtTime(c.last_success_at)}` : "No successful sync for this city"}</span>
+                      </div>}</td>
                       <td className="small">{c?.last_run ? <><StatusBadge s={c.last_run.status} /> <span className="faint"><Timestamp iso={c.last_run.started_at} /> · {c.last_run.records} rec · {c.last_run.duration_ms ?? "—"} ms</span>
                         {c.last_run.error && <div className="xs" style={{ color: "var(--red)" }}>{c.last_run.error}</div>}</> : <span className="faint">—</span>}</td>
                       <td className="xs muted" style={{ maxWidth: 200 }}>{s.license}</td>
