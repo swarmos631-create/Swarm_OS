@@ -13,12 +13,12 @@ import logging
 import math
 import random
 import threading
-from collections.abc import Iterator
-from typing import Any
 
 import httpx
 import numpy as np
 
+from swarmos.integrations.mvt import fields as _fields
+from swarmos.integrations.mvt import packed as _packed
 from swarmos.models import City
 
 log = logging.getLogger("swarmos.landmask")
@@ -29,47 +29,7 @@ GRID = 256  # cells per tile side (~150 m at zoom 10)
 SHORE_MARGIN = 0.0012  # ~130 m: keep simulated markers off the waterline
 
 
-# --------------------------------------------------------------------------- minimal protobuf / MVT reader
-
-def _varint(buf: bytes, i: int) -> tuple[int, int]:
-    shift = result = 0
-    while True:
-        b = buf[i]
-        i += 1
-        result |= (b & 0x7F) << shift
-        if b < 0x80:
-            return result, i
-        shift += 7
-
-
-def _fields(buf: bytes) -> Iterator[tuple[int, int, Any]]:
-    """Yield (field number, wire type, value) for one protobuf message."""
-    i, n = 0, len(buf)
-    while i < n:
-        key, i = _varint(buf, i)
-        field, wire = key >> 3, key & 7
-        val: Any
-        if wire == 0:
-            val, i = _varint(buf, i)
-        elif wire == 2:
-            ln, i = _varint(buf, i)
-            val, i = buf[i:i + ln], i + ln
-        elif wire == 5:
-            val, i = buf[i:i + 4], i + 4
-        elif wire == 1:
-            val, i = buf[i:i + 8], i + 8
-        else:  # groups are not used by MVT
-            raise ValueError(f"unsupported wire type {wire}")
-        yield field, wire, val
-
-
-def _packed(buf: bytes) -> list[int]:
-    out, i = [], 0
-    while i < len(buf):
-        v, i = _varint(buf, i)
-        out.append(v)
-    return out
-
+# --------------------------------------------------------------------------- MVT polygons (reader in integrations.mvt)
 
 def _rings(geometry: list[int]) -> list[list[tuple[int, int]]]:
     """Decode MVT polygon geometry commands into rings of tile coordinates."""
