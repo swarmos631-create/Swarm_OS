@@ -43,8 +43,11 @@ def database():
     from swarmos.cli import _alembic_cfg
     from swarmos.config import get_settings
     from swarmos.db import reset_engine, session_scope
+    from swarmos.demo import seed
     from swarmos.demo.seed import bootstrap
 
+    # Keep the suite offline: no water-mask tiles, simulated points use bounding-box placement.
+    seed.land_mask = lambda city, timeout=15.0: None  # type: ignore[assignment]
     get_settings.cache_clear()
     reset_engine()
     command.upgrade(_alembic_cfg(), "head")
