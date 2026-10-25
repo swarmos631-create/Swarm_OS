@@ -150,9 +150,12 @@ def create_app() -> FastAPI:
         if not request.url.path.startswith("/api/"):
             response.headers.setdefault(
                 "Content-Security-Policy",
-                "default-src 'self'; img-src 'self' data: blob: https://tiles.openfreemap.org; "
-                "connect-src 'self' https://tiles.openfreemap.org; worker-src 'self' blob:; "
-                "style-src 'self' 'unsafe-inline'; font-src 'self' data:; frame-ancestors 'none'",
+                # Same policy as vercel.json: the MapmyIndia Web SDK loads scripts, styles, tiles and fonts from its CDN.
+                "default-src 'self'; script-src 'self' https://sdk.mappls.com https://apis.mappls.com https://*.mappls.com; "
+                "style-src 'self' 'unsafe-inline' https://*.mappls.com; "
+                "img-src 'self' data: blob: https://*.mappls.com https://*.mapmyindia.com; "
+                "connect-src 'self' https://*.mappls.com https://*.mapmyindia.com; font-src 'self' data: https://*.mappls.com; "
+                "worker-src 'self' blob:; child-src blob:; frame-ancestors 'none'",
             )
         elif not request.url.path.startswith("/api/docs"):
             response.headers["Cache-Control"] = "no-store"  # never let browsers/SW cache privileged API responses
