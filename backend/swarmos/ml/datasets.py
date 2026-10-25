@@ -6,6 +6,7 @@ import csv
 import hashlib
 import json
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -53,24 +54,33 @@ KAGGLE_AQ = {
 }
 
 
-def _download_csv(url: str) -> list[dict[str, str]]:
+def _download_csv(url: str, keep: tuple[str, ...] | None = None, where: Callable[[dict[str, str]], bool] | None = None) -> list[dict[str, str]]:
+    """Stream a CSV, keeping only the named columns (the Kaggle files are large for a 512 MB instance)."""
     import httpx
 
-    with httpx.Client(timeout=120, follow_redirects=True, headers={"User-Agent": "SwarmOS/0.1 (+ml training)"}) as client:
-        r = client.get(url)
-        r.raise_for_status()
-    return list(csv.DictReader(r.text.splitlines()))
+    rows: list[dict[str, str]] = []
+    with httpx.Client(timeout=180, follow_redirects=True, headers={"User-Agent": "SwarmOS/0.1 (+ml training)"}) as client:
+        with client.stream("GET", url) as r:
+            r.raise_for_status()
+            reader = csv.DictReader(r.iter_lines())
+            for row in reader:
+                if where is None or where(row):
+                    rows.append({k: row.get(k, "") for k in keep} if keep else row)
+    return rows
 
 
 def _kaggle_india_aq(p: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     base = p.get("mirror", KAGGLE_AQ["mirror"])
-    aq = _download_csv(base + "air_quality_daily.csv")
-    wx = _download_csv(base + "weather_daily.csv")
+    aq = _download_csv(base + "air_quality_daily.csv", ("city", "date", "pm2_5_mean", "pm10_mean"))
     coords = {r["city"]: (float(r["latitude"]), float(r["longitude"])) for r in _download_csv(base + "cities.csv")}
-    weather = {(r["city"], r["date"]): r for r in wx}
     by_city: dict[str, dict[str, dict[str, str]]] = {}
     for r in aq:
         by_city.setdefault(r["city"], {})[r["date"]] = r
+    del aq
+    first_aq = min((min(d) for d in by_city.values() if d), default="")
+    wx_cols = ("city", "date", "temperature_2m_max", "temperature_2m_min", "precipitation_sum", "wind_speed_10m_max", "relative_humidity_2m_mean")
+    # Weather starts in 2020 but AQ in 2022; keep only the days that can be joined.
+    weather = {(r["city"], r["date"]): r for r in _download_csv(base + "weather_daily.csv", wx_cols, where=lambda r: r["date"] >= first_aq)}
     rows: list[dict[str, Any]] = []
     for city, days in by_city.items():
         if city not in coords:
