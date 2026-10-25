@@ -60,8 +60,28 @@ def _refresh_source_registry() -> None:
 
         with session_scope() as db:
             sync_registry(db, get_settings())
+        from swarmos.demo.seed import seed_documents
+
+        with session_scope() as db:
+            seed_documents(db)  # adds new reference documents to existing deployments
     except Exception as exc:  # pragma: no cover - never block startup
         log.warning("source_registry_refresh_skipped", extra={"error_type": type(exc).__name__})
+
+
+def _preload_models() -> None:
+    """Load promoted models into memory in the background so the first agent run does not pay for it."""
+    import threading
+
+    def run() -> None:
+        try:
+            from swarmos.ai.runtime import get_runtime
+
+            loaded = get_runtime().artifacts.preload()
+            log.info("models_preloaded", extra={"models": loaded})
+        except Exception as exc:  # pragma: no cover - never block startup
+            log.warning("model_preload_skipped", extra={"error_type": type(exc).__name__})
+
+    threading.Thread(target=run, name="model-preload", daemon=True).start()
 
 
 @asynccontextmanager
@@ -85,6 +105,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         worker.start()
         if settings.auto_train_models:
             _queue_missing_models()
+        _preload_models()
     log.info("api_started", extra={"env": settings.env, "agents": len(AGENTS), "worker_embedded": bool(worker)})
     try:
         yield
