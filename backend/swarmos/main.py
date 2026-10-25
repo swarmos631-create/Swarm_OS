@@ -27,6 +27,43 @@ from swarmos.db import get_engine
 log = logging.getLogger("swarmos.app")
 
 
+def _queue_missing_models() -> None:
+    """Train every configured model that has no promoted version yet, so agents use ML rather than baselines."""
+    try:
+        from sqlalchemy import select
+
+        from swarmos.db import session_scope, utcnow
+        from swarmos.jobs.queue import enqueue
+        from swarmos.ml.pipeline import available_configs, training_available
+        from swarmos.models import ModelVersion
+
+        if not training_available():
+            return
+        settings = get_settings()
+        with session_scope() as db:
+            promoted = set(db.scalars(select(ModelVersion.model_name).where(ModelVersion.status == "promoted")))
+            for cfg in available_configs(settings):
+                name = cfg["model_name"]
+                if name not in promoted:
+                    enqueue(db, "train_model", {"model_name": name, "promote_if_better": True, "actor_id": None},
+                            dedupe_key=f"autotrain:{name}:{utcnow():%Y%m%d}", priority=7, max_attempts=2)
+                    log.info("model_autotrain_queued", extra={"model": name})
+    except Exception as exc:  # pragma: no cover - never block startup
+        log.warning("model_autotrain_skipped", extra={"error_type": type(exc).__name__})
+
+
+def _refresh_source_registry() -> None:
+    """Re-register data sources at startup so newly added adapters and newly set API keys show up without re-seeding."""
+    try:
+        from swarmos.db import session_scope
+        from swarmos.integrations.sync import sync_registry
+
+        with session_scope() as db:
+            sync_registry(db, get_settings())
+    except Exception as exc:  # pragma: no cover - never block startup
+        log.warning("source_registry_refresh_skipped", extra={"error_type": type(exc).__name__})
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
@@ -35,6 +72,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         tables = set(inspect(get_engine()).get_table_names())
         if "alembic_version" not in tables:
             log.error("database_not_migrated", extra={"hint": "Run: swarmos init  (or: alembic upgrade head)"})
+        elif settings.env != "test":
+            _refresh_source_registry()
     except Exception as exc:
         # Keep serving: /api/health/ready and the API's 503 responses then explain the problem to operators.
         log.error("database_unreachable_at_startup", extra={"error_type": type(exc).__name__})
@@ -44,6 +83,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         worker = EmbeddedWorker()
         worker.start()
+        if settings.auto_train_models:
+            _queue_missing_models()
     log.info("api_started", extra={"env": settings.env, "agents": len(AGENTS), "worker_embedded": bool(worker)})
     try:
         yield
