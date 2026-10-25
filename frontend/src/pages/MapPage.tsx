@@ -1,7 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "../api/client";
+import { mapLayersQuery } from "../api/queries";
 import { MapControls, type MapLike, POINT_COLORS } from "../components/map/mapkit";
 import { type MapPoint, MapplsCanvas } from "../components/map/mappls";
 import { ErrorState, ProvenanceBadge, SeverityBadge } from "../components/ui";
@@ -29,13 +30,14 @@ export default function MapPage() {
   const pal = POINT_COLORS[theme];
   const [mpl, setMpl] = useState<MapLike | null>(null);
 
-  const layersQ = useQuery({ queryKey: ["map-layers", cityId], queryFn: () => api<{ layers: Layer[]; note: string }>(`/cities/${cityId}/map/layers`) });
+  const layersQ = useQuery(mapLayersQuery<{ layers: Layer[]; note: string }>(cityId));
   const available = layersQ.data?.layers ?? [];
   const active = selected.filter((s) => available.some((l) => l.id === s));
   const featQ = useQuery({
     queryKey: ["map-features", cityId, active.join(",")],
     queryFn: () => api<FC>(`/cities/${cityId}/map/features`, { query: { layers: active.join(",") } }),
     enabled: active.length > 0,
+    placeholderData: keepPreviousData,
   });
 
   // City switch: the MapmyIndia map is rebuilt around the new city; clear the old selection and error.
