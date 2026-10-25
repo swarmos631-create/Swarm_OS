@@ -162,7 +162,8 @@ def naqi(concentrations: dict[str, float]) -> dict[str, Any] | None:
 def forecast_next_24h(ctx: AgentContext, series: Series, model_name: str) -> dict[str, Any]:
     """Forecast the next 24 hours with the promoted model; fall back to a seasonal-naive baseline."""
     hist = {floor_hour(p.t): p.v for p in series.points}
-    start = floor_hour(ctx.now) + timedelta(hours=1)
+    # Anchor on the newest hour that has data, so a feed that lags by an hour or two still yields a model forecast.
+    start = min(floor_hour(ctx.now), max(hist)) + timedelta(hours=1) if hist else floor_hour(ctx.now) + timedelta(hours=1)
     targets = [start + timedelta(hours=h) for h in range(24)]
     span_h = (max(hist) - min(hist)).total_seconds() / 3600 if hist else 0
     if span_h < MIN_HISTORY_HOURS - 24:
