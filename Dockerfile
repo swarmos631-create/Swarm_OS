@@ -26,4 +26,5 @@ ENV SWARMOS_ENV=production \
     SWARMOS_WORKER_EMBEDDED=true
 EXPOSE 8080
 # `init` = migrations + idempotent catalogue/registry/document seeding, so an empty database works on first boot.
-CMD ["sh", "-c", "cd backend && swarmos init && exec swarmos serve --host 0.0.0.0 --port ${PORT:-8080}"]
+# Migrations must succeed; seeding is best effort (a full disk or a slow upstream must not stop the site starting).
+CMD ["sh", "-c", "cd backend && swarmos migrate && { swarmos seed || echo 'swarmos seed failed - starting anyway'; } && exec swarmos serve --host 0.0.0.0 --port ${PORT:-8080}"]
