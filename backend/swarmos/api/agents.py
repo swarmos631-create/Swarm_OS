@@ -41,11 +41,14 @@ def _agent_stats(db: Session, days: int = 7) -> dict[str, dict[str, Any]]:
             s["avg_ms"] = round(avg_ms) if s["avg_ms"] is None else round((s["avg_ms"] + avg_ms) / 2)
         if last and (s["last_run_at"] is None or iso(last) > s["last_run_at"]):
             s["last_run_at"] = iso(last)
+            s["last_status"] = status
     for s in stats.values():
         ok = s["by_status"].get("succeeded", 0) + s["by_status"].get("degraded", 0)
         s["useful_rate"] = round(ok / s["runs"], 3) if s["runs"] else None
-        s["health"] = ("failing" if s["by_status"].get("failed", 0) + s["by_status"].get("timed_out", 0) > ok
-                       else "degraded" if s["by_status"].get("unavailable", 0) + s["by_status"].get("degraded", 0) > 0 else "healthy")
+        # Health follows the most recent run (older problems stay visible in by_status / useful_rate).
+        last_status = s.get("last_status")
+        s["health"] = ("failing" if last_status in ("failed", "timed_out")
+                       else "degraded" if last_status in ("unavailable", "degraded") else "healthy")
     return stats
 
 
