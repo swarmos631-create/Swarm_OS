@@ -129,7 +129,7 @@ def road_incident_triage(ctx: AgentContext) -> AgentResult:
     incs = ctx.data.incidents(categories=MOBILITY_CATEGORIES)
     if not incs:
         return ok("No open road or mobility incidents.", confidence=0.8, method="rules:priority_score",
-                  metrics={"open": 0, "ranked": []}, extra_refs=[records_ref("incidents", 0, ["operator"])],
+                  metrics={"open": 0, "ranked": []}, extra_refs=[records_ref("incidents", 0, ["operator"], incident_ids=[])],
                   provenance={"operator"})
     ranked = []
     for i in incs:
@@ -150,7 +150,7 @@ def road_incident_triage(ctx: AgentContext) -> AgentResult:
                                                 "age_h": round(a, 1), "score": round(s, 1)} for s, i, a in ranked[:10]]},
         findings=[finding(i.title, f"{i.severity} · {i.status} · {a:.1f} h old", i.severity, i.lat, i.lon)
                   for _, i, a in ranked[:5]],
-        extra_refs=[records_ref("incidents", len(incs), [i.provenance for i in incs])],
+        extra_refs=[records_ref("incidents", len(incs), [i.provenance for i in incs], incident_ids=(i.id for i in incs))],
         provenance={i.provenance for i in incs},
     )
 

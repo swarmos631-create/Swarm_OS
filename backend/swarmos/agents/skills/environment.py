@@ -200,10 +200,10 @@ def flood_score(rain_24h: float, rain_72h: float, past_48h: float, drainage_repo
             "level": "severe" if score >= 70 else "elevated" if score >= 45 else "guarded" if score >= 20 else "low"}
 
 
-def _drainage_reports(ctx: AgentContext) -> tuple[int, set[str]]:
+def _drainage_reports(ctx: AgentContext):
     reqs = ctx.data.service_requests(days=7, categories=("drainage", "water_logging"))
     incs = ctx.data.incidents(categories=("flooding", "drainage"), days=7)
-    return len(reqs) + len(incs), {r.provenance for r in reqs} | {i.provenance for i in incs}
+    return reqs, incs
 
 
 def flood_inputs(ctx: AgentContext) -> dict[str, Any] | None:
@@ -214,9 +214,11 @@ def flood_inputs(ctx: AgentContext) -> dict[str, Any] | None:
     rain_24 = sum(window(fc72, ctx.now, ctx.now + timedelta(hours=24))) if fc72 else 0.0
     rain_72 = sum(fc72.values) if fc72 else 0.0
     past_48 = sum(past.values) if past else 0.0
-    reports, prov = _drainage_reports(ctx)
+    requests, incidents = _drainage_reports(ctx)
+    reports = len(requests) + len(incidents)
+    prov = {r.provenance for r in requests} | {i.provenance for i in incidents}
     return {"rain_24": rain_24, "rain_72": rain_72, "past_48": past_48, "reports": reports, "prov": prov,
-            "series": [s for s in (fc72, past) if s]}
+            "requests": requests, "incidents": incidents, "series": [s for s in (fc72, past) if s]}
 
 
 def flood_risk(ctx: AgentContext) -> AgentResult:
@@ -234,7 +236,12 @@ def flood_risk(ctx: AgentContext) -> AgentResult:
                                    payload={"department": "Storm Water Drains"}, risk="moderate"))
     return ok(f"Flood risk index {res['score']}/100 ({res['level']}).", confidence=0.5, method="rules:additive_flood_index",
               series=inp["series"], findings=findings, actions=actions, metrics=res,
-              extra_refs=[records_ref("drainage_reports", inp["reports"], inp["prov"] or {"operator"})],
+              extra_refs=[records_ref("service_requests", len(inp["requests"]),
+                                      {r.provenance for r in inp["requests"]} or {"operator"},
+                                      request_ids=(r.id for r in inp["requests"])),
+                          records_ref("incidents", len(inp["incidents"]),
+                                      {i.provenance for i in inp["incidents"]} or {"operator"},
+                                      incident_ids=(i.id for i in inp["incidents"]))],
               provenance=inp["prov"],
               limitations=["Not a hydrological model — no terrain, drainage-network or river-gauge data is used.", *WEATHER_LIMITS])
 

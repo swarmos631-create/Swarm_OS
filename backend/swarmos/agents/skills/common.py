@@ -39,7 +39,8 @@ def layer_ref(layer: str, feats: Iterable[Any]) -> dict[str, Any]:
     provs = sorted({f.provenance for f in rows}) or ["unavailable"]
     sources = sorted({f.source_id for f in rows})
     return {"type": "features", "layer": layer, "n": len(rows), "provenance": provs[0] if len(provs) == 1 else "mixed",
-            "source_id": sources[0] if len(sources) == 1 else ",".join(sources)}
+            "source_id": sources[0] if len(sources) == 1 else ",".join(sources),
+            "feature_ids": [row.id for row in rows[-12:]], "feature_ids_truncated": len(rows) > 12}
 
 
 def source_phrase(feats: Iterable[Any]) -> str:
@@ -51,8 +52,22 @@ def source_phrase(feats: Iterable[Any]) -> str:
     return f"from {' + '.join(names)}" if names else "mapped"
 
 
-def records_ref(kind: str, n: int, provenances: Iterable[str]) -> dict[str, Any]:
-    return {"type": "records", "kind": kind, "n": n, "provenance": sorted(set(provenances))}
+def records_ref(kind: str, n: int, provenances: Iterable[str], *, request_ids: Iterable[str] | None = None,
+                incident_ids: Iterable[str] | None = None, execution_ids: Iterable[int] | None = None) -> dict[str, Any]:
+    ref = {"type": "records", "kind": kind, "n": n, "provenance": sorted(set(provenances))}
+    if request_ids is not None:
+        ids = list(request_ids)
+        ref["request_ids"] = ids[-12:]
+        ref["request_ids_truncated"] = len(ids) > 12
+    if incident_ids is not None:
+        ids = list(incident_ids)
+        ref["incident_ids"] = ids[-12:]
+        ref["incident_ids_truncated"] = len(ids) > 12
+    if execution_ids is not None:
+        ids = list(execution_ids)
+        ref["execution_ids"] = ids[-12:]
+        ref["execution_ids_truncated"] = len(ids) > 12
+    return ref
 
 
 def window(series: Series, start: datetime, end: datetime) -> list[float]:

@@ -417,6 +417,7 @@ OSM_LAYERS: list[tuple[str, str]] = [
     ('nwr["amenity"="police"]', "police"),
     ('nwr["amenity"="school"]', "school"),
     ('nwr["amenity"="bus_station"]', "bus_station"),
+    ('node["highway"="street_lamp"]', "street_light"),
     ('nwr["railway"="station"]', "rail_station"),
     ('nwr["man_made"="water_tower"]', "water_tower"),
     ('nwr["power"="substation"]', "substation"),
@@ -431,6 +432,8 @@ def _layer_for(tags: dict[str, str]) -> str | None:
                "school": "school", "bus_station": "bus_station", "toilets": "public_toilet"}
     if amenity in mapping:
         return mapping[amenity]
+    if tags.get("highway") == "street_lamp":
+        return "street_light"
     if tags.get("railway") == "station":
         return "rail_station"
     if tags.get("man_made") == "water_tower":
@@ -497,7 +500,8 @@ def normalize_overpass(pois: dict[str, Any], counts: dict[str, Any] | None, now:
         if lat is None or lon is None:
             continue
         props = {k: tags[k] for k in ("operator", "healthcare", "emergency", "wheelchair", "opening_hours",
-                                       "addr:street", "addr:city", "beds", "operator:type") if k in tags}
+                                       "addr:street", "addr:city", "beds", "operator:type", "lit",
+                                       "lit_by_led", "lamp_type", "lamp_mount", "ref") if k in tags}
         props["osm_type"] = el.get("type")
         out.features.append(
             NormalizedFeature(

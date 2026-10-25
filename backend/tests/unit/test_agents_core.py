@@ -1,4 +1,5 @@
 from collections import Counter
+from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
@@ -7,6 +8,8 @@ from swarmos.agents.contracts import ActionDraft, AgentResult
 from swarmos.agents.planner import FINAL_STAGE, PlanningError, build_plan
 from swarmos.agents.registry import AGENTS, REGISTRY, validate_registry
 from swarmos.agents.skills.common import naqi, naqi_category, naqi_subindex, robust_z
+from swarmos.agents.skills.safety import disaster_impact
+from swarmos.services.consensus import compare_executions
 
 REQUIRED_NAMES = [
     "Traffic Flow Analyst", "Congestion Forecast Agent", "Public Transit Analyst", "Road Incident Triage Agent", "Mobility Optimization Agent",
@@ -77,6 +80,41 @@ def test_robust_z_detects_spike():
     assert robust_z(25.0, hist) > 3.5
     assert robust_z(10.5, hist) < 3.5
     assert robust_z(1.0, [1.0] * 5) is None
+
+
+def test_consensus_flags_shared_signal_differences_without_claiming_ground_truth():
+    executions = [
+        SimpleNamespace(agent_id="agent_a", status="succeeded", output={
+            "metrics": {"risk": {"score": 30}}, "findings": [{"title": "Flood risk high", "severity": "high"}],
+        }),
+        SimpleNamespace(agent_id="agent_b", status="degraded", output={
+            "metrics": {"risk": {"score": 70}}, "findings": [{"title": "Flood risk high", "severity": "low"}],
+        }),
+    ]
+    review = compare_executions(executions)
+    assert review["status"] == "differences_found"
+    assert review["material_differences"] == 2
+    assert any("not proof that one agent is correct" in item for item in review["limitations"])
+
+
+def test_consensus_does_not_treat_missing_overlap_as_agreement():
+    review = compare_executions([SimpleNamespace(agent_id="agent", status="succeeded", output={"metrics": {}, "findings": []})])
+    assert review["status"] == "insufficient_overlap"
+
+
+def test_disaster_impact_references_persisted_earthquake_features():
+    feature = SimpleNamespace(id=42, layer="earthquake", provenance="live", source_id="usgs-earthquakes",
+                              properties={"magnitude": 4.2, "place": "Test region"}, observed_at=None,
+                              lat=12.0, lon=77.0)
+    ctx = SimpleNamespace(
+        spec=SimpleNamespace(config={"radius_km": 500}),
+        data=SimpleNamespace(earthquakes_near=lambda radius_km: [(feature, 125.0)], incidents=lambda days: []),
+        up=lambda agent_id: None,
+    )
+    result = disaster_impact(ctx)
+    feature_ref = next(ref for ref in result.data_refs if ref.get("layer") == "earthquake" and "feature_ids" in ref)
+    assert feature_ref["feature_ids"] == [42]
+    assert feature_ref["feature_ids_truncated"] is False
 
 
 def test_planner_selects_by_keywords_and_adds_dependencies():

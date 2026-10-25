@@ -33,13 +33,13 @@ The Model Lab page shows whether each provider is reachable and whether the conf
 ## Pipeline (`backend/swarmos/ml/`)
 
 Training and trained-model inference need the optional `ml` extra (`pip install -e "backend[ml]"`; `make install`
-includes it). Without it (as on Vercel), `training_available()` is false: agents fall back to their deterministic
+includes it). Without it, `training_available()` is false: agents fall back to their deterministic
 baselines and training requests return `503 training_unavailable`.
 
 ```
 backend/swarmos/ml/configs/<model>.yaml   reproducible training config (dataset generator + params, split,
                                           hyperparameters, gate); package data, override with SWARMOS_ML_CONFIGS_DIR
-ml/                                       scratch root (/tmp/swarmos-ml on Vercel)
+ml/                                       scratch root (/tmp/swarmos-ml in container deployments)
 ├── datasets/synthetic/<name>/    data.csv + manifest.json (sha256, rows, licence, provenance, generator params)
 ├── datasets/raw|processed/       place authorised real datasets here (git-ignored)
 ├── artifacts/<model>/<version>/  model.joblib + metadata.json (git-ignored; local copy)

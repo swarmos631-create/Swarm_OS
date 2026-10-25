@@ -129,7 +129,7 @@ def drainage_risk(ctx: AgentContext) -> AgentResult:
     return ok(f"{len(reqs)} drainage complaints in 14 days; flood index {score if score is not None else 'n/a'}.",
               confidence=0.55, method="rules:complaint_hotspots", actions=actions, provenance=prov,
               metrics={"complaints_14d": len(reqs), "hotspots": hotspots, "flood_index": score},
-              extra_refs=[records_ref("service_requests", len(reqs), {r.provenance for r in reqs} or {"operator"})])
+              extra_refs=[records_ref("service_requests", len(reqs), {r.provenance for r in reqs} or {"operator"}, request_ids=(r.id for r in reqs))])
 
 
 def wastewater(ctx: AgentContext) -> AgentResult:

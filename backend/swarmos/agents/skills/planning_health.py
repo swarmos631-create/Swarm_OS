@@ -164,7 +164,7 @@ def community_needs(ctx: AgentContext) -> AgentResult:
     return ok(f"Top community concern: {by_cat.most_common(1)[0][0]} ({by_cat.most_common(1)[0][1]} of {len(reqs)} requests).",
               confidence=0.7, method="descriptive:aggregation", provenance={r.provenance for r in reqs},
               metrics={"by_category": dict(by_cat.most_common()), "by_ward": dict(by_ward.most_common(10)), "total_30d": len(reqs)},
-              extra_refs=[records_ref("service_requests", len(reqs), {r.provenance for r in reqs})],
+              extra_refs=[records_ref("service_requests", len(reqs), {r.provenance for r in reqs}, request_ids=(r.id for r in reqs))],
               limitations=["Complaint volume reflects reporting behaviour as well as need."])
 
 
@@ -172,16 +172,52 @@ def accessibility(ctx: AgentContext) -> AgentResult:
     feats = ctx.data.features(["hospital", "clinic", "school", "bus_station", "rail_station", "public_toilet", "police"])
     if not feats:
         return unavailable(["public facility data with accessibility tags (OSM)"], "No facility data synchronised.")
-    per: dict[str, Counter] = {}
+
+    # OSM has no default wheelchair value: a missing or explicit "unknown" tag is
+    # unknown, not an assertion that a place is accessible or inaccessible.
+    per: dict[str, Counter[str]] = {}
     for f in feats:
-        per.setdefault(f.layer, Counter())[f.properties.get("wheelchair", "unknown")] += 1
-    rows = {layer: {"total": sum(c.values()), "yes": c.get("yes", 0), "limited": c.get("limited", 0), "no": c.get("no", 0),
-                    "unknown": c.get("unknown", 0)} for layer, c in per.items()}
-    tagged = sum(r["total"] - r["unknown"] for r in rows.values())
-    return ok(f"Wheelchair accessibility is tagged for {tagged} of {len(feats)} mapped facilities.", confidence=0.4,
-              method="descriptive:osm_wheelchair_tag", metrics={"by_layer": rows, "tagged_share": round(tagged / len(feats), 3)},
-              provenance={f.provenance for f in feats},
-              limitations=["Most facilities have no accessibility tag; 'unknown' must not be read as inaccessible."])
+        raw_value = f.properties.get("wheelchair")
+        value = str(raw_value).strip().lower() if raw_value is not None else ""
+        status = value if value in {"yes", "limited", "no", "designated"} else (
+            "unknown" if value in {"", "unknown", "unspecified"} else "other"
+        )
+        per.setdefault(f.layer, Counter())[status] += 1
+
+    fields = ("yes", "designated", "limited", "no", "unknown", "other")
+    rows = {
+        layer: {"total": sum(counts.values()), **{field: counts.get(field, 0) for field in fields}}
+        for layer, counts in per.items()
+    }
+    totals = Counter()
+    for counts in per.values():
+        totals.update(counts)
+    total = len(feats)
+    tagged = total - totals["unknown"]
+    standard_tagged = total - totals["unknown"] - totals["other"]
+    refs = [layer_ref(layer, feats) for layer in sorted(per)]
+    return ok(
+        f"{standard_tagged} of {total} mapped facilities have a standard wheelchair tag "
+        f"(yes: {totals['yes']}, designated: {totals['designated']}, limited: {totals['limited']}, no: {totals['no']}); "
+        f"{totals['unknown']} have no usable tag.",
+        confidence=0.4, method="descriptive:osm_wheelchair_tag",
+        metrics={
+            "by_layer": rows,
+            "total_facilities": total,
+            "tagged_facilities": tagged,
+            "standard_tagged_facilities": standard_tagged,
+            "unclassified_tag_values": totals["other"],
+            "tagged_share": round(tagged / total, 3),
+            "standard_tagged_share": round(standard_tagged / total, 3),
+        },
+        extra_refs=refs,
+        provenance={f.provenance for f in feats},
+        limitations=[
+            "OpenStreetMap has no default wheelchair-access value; missing and unknown tags do not imply accessible or inaccessible.",
+            "This audits mapped facility tags only; it does not validate sidewalk, crossing, kerb or end-to-end route accessibility.",
+            "Non-standard tag values are counted separately and are not interpreted as positive or negative access claims.",
+        ],
+    )
 
 
 COVERAGE_TARGETS_KM = {"hospital": 5.0, "fire_station": 7.0, "police": 3.0, "school": 1.5}

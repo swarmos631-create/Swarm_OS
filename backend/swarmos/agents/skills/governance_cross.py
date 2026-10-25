@@ -118,6 +118,11 @@ def budget_analysis(ctx: AgentContext) -> AgentResult:
 def operational_performance(ctx: AgentContext) -> AgentResult:
     db = ctx.data.db
     since = ctx.now - timedelta(days=7)
+    execution_rows = list(db.scalars(
+        select(AgentExecution).join(AgentTask, AgentTask.id == AgentExecution.task_id)
+        .where(AgentTask.city_id == ctx.city.id, AgentTask.created_at >= since)
+        .order_by(AgentExecution.id)
+    ))
     execs = db.execute(
         select(AgentExecution.status, func.count(AgentExecution.id))
         .join(AgentTask, AgentTask.id == AgentExecution.task_id)
@@ -142,7 +147,10 @@ def operational_performance(ctx: AgentContext) -> AgentResult:
               method="descriptive:internal_operational_metrics", provenance={"derived"} | {i.provenance for i in incs},
               metrics={"agent_executions_7d": exec_counts, "sync_runs_7d": sync_counts, "incidents_30d": len(incs),
                        "resolved_30d": len(resolved), "mttr_h": round(mttr, 1) if mttr else None},
-              extra_refs=[records_ref("agent_executions", total_exec, ["derived"]), records_ref("incidents", len(incs), {i.provenance for i in incs} or {"operator"})])
+              extra_refs=[records_ref("agent_executions", total_exec, ["derived"],
+                                      execution_ids=(row.id for row in execution_rows)),
+                          records_ref("incidents", len(incs), {i.provenance for i in incs} or {"operator"},
+                                      incident_ids=(i.id for i in incs))])
 
 
 def resource_allocation(ctx: AgentContext) -> AgentResult:

@@ -65,6 +65,19 @@ def test_overpass_normalisation_layers_and_counts():
     assert {m.metric: m.value for m in p.measurements}["osm_landuse_residential_ways"] == 1200
 
 
+def test_overpass_normalisation_keeps_community_mapped_street_lamps():
+    payload = {"elements": [{
+        "type": "node", "id": 777, "lat": 12.97, "lon": 77.59,
+        "tags": {"highway": "street_lamp", "lit": "yes", "lamp_type": "LED", "ref": "pole-7"},
+    }]}
+    result = normalize_overpass(payload, None, NOW)
+    assert len(result.features) == 1
+    assert result.features[0].layer == "street_light"
+    assert result.features[0].external_id == "node/777"
+    assert result.features[0].properties["lit"] == "yes"
+    assert result.features[0].properties["lamp_type"] == "LED"
+
+
 def test_cpcb_normalisation_accepts_both_schemas_and_converts_ist():
     p = normalize_cpcb(load("cpcb.json")["records"])
     assert len(p.measurements) == 2

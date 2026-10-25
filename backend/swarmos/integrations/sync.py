@@ -435,6 +435,7 @@ def city_source_status(db: Session, city_id: str) -> list[dict[str, Any]]:
                     "status": last_run.status, "started_at": _aware(last_run.started_at),
                     "records": last_run.records, "error": last_run.error, "duration_ms": last_run.duration_ms,
                 },
+                "last_success_at": _aware(last_ok),
                 "freshness": freshness(src, last_ok, now) if scope != "none" else None,
                 "attribution": src.attribution,
             }

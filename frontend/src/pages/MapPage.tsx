@@ -3,8 +3,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "../api/client";
 import { mapLayersQuery } from "../api/queries";
+import { MapCanvas } from "../components/map/MapCanvas";
 import { MapControls, type MapLike, POINT_COLORS } from "../components/map/mapkit";
-import { type MapPoint, MapplsCanvas } from "../components/map/mappls";
+import { type MapPoint } from "../components/map/mappls";
 import { ErrorState, ProvenanceBadge, SeverityBadge } from "../components/ui";
 import { fmtTime, titleCase } from "../lib/format";
 import { Icon } from "../lib/icons";
@@ -29,6 +30,7 @@ export default function MapPage() {
   const { theme } = useTheme();
   const pal = POINT_COLORS[theme];
   const [mpl, setMpl] = useState<MapLike | null>(null);
+  const [mapProvider, setMapProvider] = useState<"mappls" | "openfreemap">("openfreemap");
 
   const layersQ = useQuery(mapLayersQuery<{ layers: Layer[]; note: string }>(cityId));
   const available = layersQ.data?.layers ?? [];
@@ -40,7 +42,7 @@ export default function MapPage() {
     placeholderData: keepPreviousData,
   });
 
-  // City switch: the MapmyIndia map is rebuilt around the new city; clear the old selection and error.
+  // City switch: the active map renderer is rebuilt around the new city; clear the old selection and error.
   useEffect(() => { setDetail(null); setMapError(null); }, [cityId]);
 
   const ctl: MapLike | null = mpl;
@@ -69,23 +71,23 @@ export default function MapPage() {
       <div className="page-head">
         <div>
           <h1>Operations Map — {city?.name}</h1>
-          <p>City layers from synchronised sources on the MapmyIndia map. Base map tiles carry no sensor data.</p>
+          <p>City layers from synchronised sources over {mapProvider === "mappls" ? "Mappls" : "OpenFreeMap"} base tiles. Tile requests expose the viewed area to that provider; base tiles are separate from SwarmOS sensor and incident data.</p>
         </div>
         <div className="row wrap">
           <div className="row" role="group" aria-label="Map mode">
             <button className="chip" aria-pressed={!mode3d} onClick={() => setMode3d(false)}><Icon name="map" width={14} />2D</button>
-            <button className="chip" aria-pressed={mode3d} onClick={() => setMode3d(true)} data-testid="map-3d"><Icon name="cube" width={14} />3D buildings</button>
+            <button className="chip" aria-pressed={mode3d} onClick={() => setMode3d(true)} data-testid="map-3d"><Icon name="cube" width={14} />3D tilt</button>
           </div>
         </div>
       </div>
-      {mode3d && <div className="notice info"><Icon name="info" />3D view tilts the MapmyIndia map; building models appear at street-level zoom where MapmyIndia has them. It is illustrative — not a survey-grade digital twin.</div>}
+      {mode3d && <div className="notice info"><Icon name="info" />3D mode tilts the {mapProvider === "mappls" ? "Mappls" : "OpenFreeMap"} view. Building detail depends on the map provider and zoom level; this is illustrative, not a survey-grade digital twin.</div>}
       {!online && <div className="notice offline"><Icon name="wifiOff" />Offline: only previously cached map tiles can be shown.</div>}
       {mapError && <div className="notice error"><Icon name="alert" />{mapError}</div>}
 
       <div className="map-wrap" data-testid="ops-map" ref={wrapRef}>
         {city && (
-          <MapplsCanvas center={{ lat: city.lat, lon: city.lon }} zoom={mode3d ? 15.5 : city.zoom} points={points} mode3d={mode3d} theme={theme} onReady={setMpl}
-            label={`MapmyIndia map of ${city.name}`} onSelect={(p) => setDetail({ ...p.props, _coords: [p.lon, p.lat] })}
+          <MapCanvas center={{ lat: city.lat, lon: city.lon }} zoom={mode3d ? 15.5 : city.zoom} points={points} mode3d={mode3d} theme={theme} onReady={setMpl} onProviderChange={setMapProvider}
+            label={`Map of ${city.name}`} onSelect={(p) => setDetail({ ...p.props, _coords: [p.lon, p.lat] })}
             onFail={(msg) => setMapError(`${msg}. City layers are still listed and searchable on the left.`)} />
         )}
         <div className="map-overlay map-layers">
@@ -124,7 +126,7 @@ export default function MapPage() {
             </div>
           ))}
           {!layersQ.isLoading && available.length <= 1 && (
-            <p className="xs faint">Only incidents are available for this city. Run the MapmyIndia or OpenStreetMap sync from Data Integrations to add facility layers.</p>
+            <p className="xs faint">Only incidents are available for this city. Run the Mappls or OpenStreetMap sync from Data Integrations to add facility layers.</p>
           )}
           {featQ.isFetching && <div className="xs faint">Loading features…</div>}
         </div>

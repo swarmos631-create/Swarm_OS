@@ -61,7 +61,7 @@ def complaint_classification(ctx: AgentContext) -> AgentResult:
         metrics["agreement_with_stored"] = round(sum(a == b for a, b in stored) / len(stored), 3)
     return ok(f"Classified {len(labels)} complaints; top category '{dist.most_common(1)[0][0]}'.",
               confidence=0.5 if degraded else 0.75, method=method, degraded=degraded, metrics=metrics,
-              extra_refs=[records_ref("service_requests", len(reqs), {r.provenance for r in reqs} or {"operator"})],
+              extra_refs=[records_ref("service_requests", len(reqs), {r.provenance for r in reqs} or {"operator"}, request_ids=(r.id for r in reqs))],
               provenance={r.provenance for r in reqs} or {"operator"},
               limitations=(["Complaint classifier not promoted; keyword rules used."] if degraded else [])
               + ["Classifier is trained on SYNTHETIC complaint text; validate on real labelled complaints before relying on it."])
@@ -85,7 +85,7 @@ def service_routing(ctx: AgentContext) -> AgentResult:
               method="rules:category_department_matrix", metrics={"by_department": dict(by_dept.most_common()), "unrouted": unrouted,
                                                                    "input_routing": routing, "matrix": DEPARTMENTS},
               provenance={r.provenance for r in reqs} | (set(cls.provenance) if cls else set()),
-              extra_refs=[records_ref("service_requests", len(reqs), {r.provenance for r in reqs} or {"operator"})])
+              extra_refs=[records_ref("service_requests", len(reqs), {r.provenance for r in reqs} or {"operator"}, request_ids=(r.id for r in reqs))])
 
 
 def resolution_tracker(ctx: AgentContext) -> AgentResult:
@@ -112,7 +112,7 @@ def resolution_tracker(ctx: AgentContext) -> AgentResult:
     return ok(f"{breached} open requests have breached SLA across {len(per)} categories.", confidence=0.8,
               method="rules:sla_matrix", findings=findings, metrics={"by_category": dict(per), "open_breached": breached, "sla_hours": SLA_HOURS},
               provenance={r.provenance for r in reqs},
-              extra_refs=[records_ref("service_requests", len(reqs), {r.provenance for r in reqs})],
+              extra_refs=[records_ref("service_requests", len(reqs), {r.provenance for r in reqs}, request_ids=(r.id for r in reqs))],
               limitations=["SLA targets are configurable defaults; align with the city's citizen charter."])
 
 
@@ -157,4 +157,4 @@ def service_quality(ctx: AgentContext) -> AgentResult:
               method="statistical:median_comparison", findings=findings, provenance={r.provenance for r in reqs},
               metrics={"median_resolution_h_recent": med_recent, "median_resolution_h_prior": med_prior, "trend": trend,
                        "resolved": len(resolved)},
-              extra_refs=[records_ref("service_requests", len(reqs), {r.provenance for r in reqs})])
+              extra_refs=[records_ref("service_requests", len(reqs), {r.provenance for r in reqs}, request_ids=(r.id for r in reqs))])

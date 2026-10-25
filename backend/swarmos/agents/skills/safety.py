@@ -32,7 +32,7 @@ def emergency_triage(ctx: AgentContext) -> AgentResult:
     incs = ctx.data.incidents()
     if not incs:
         return ok("No open incidents.", confidence=0.85, method="rules:weighted_priority", provenance={"operator"},
-                  metrics={"open": 0, "ranked": [], "critical": 0}, extra_refs=[records_ref("incidents", 0, ["operator"])])
+                  metrics={"open": 0, "ranked": [], "critical": 0}, extra_refs=[records_ref("incidents", 0, ["operator"], incident_ids=[])])
     ranked = sorted(incs, key=lambda i: -_priority(ctx, i))
     actions = [
         ActionDraft(kind="escalate_incident", title=f"Acknowledge and dispatch: {i.title}",
@@ -48,14 +48,16 @@ def emergency_triage(ctx: AgentContext) -> AgentResult:
               metrics={"open": len(incs), "critical": critical,
                        "ranked": [{"id": i.id, "title": i.title, "category": i.category, "severity": i.severity, "status": i.status,
                                    "lat": i.lat, "lon": i.lon, "priority": round(_priority(ctx, i), 1)} for i in ranked[:15]]},
-              extra_refs=[records_ref("incidents", len(incs), [i.provenance for i in incs])], provenance={i.provenance for i in incs})
+              extra_refs=[records_ref("incidents", len(incs), [i.provenance for i in incs], incident_ids=(i.id for i in incs))], provenance={i.provenance for i in incs})
 
 
 def incident_correlation(ctx: AgentContext) -> AgentResult:
     incs = [i for i in ctx.data.incidents(days=3) if i.lat is not None and i.lon is not None]
     if len(incs) < 2:
         return ok("Too few geolocated incidents to correlate.", confidence=0.7, method="spatiotemporal:union_find",
-                  metrics={"clusters": []}, provenance={i.provenance for i in incs} or {"operator"})
+                  metrics={"clusters": []}, provenance={i.provenance for i in incs} or {"operator"},
+                  extra_refs=[records_ref("incidents", len(incs), [i.provenance for i in incs] or ["operator"],
+                                          incident_ids=(i.id for i in incs))])
     radius = float(ctx.spec.config.get("radius_km", 1.0))
     hours = float(ctx.spec.config.get("window_h", 6))
     parent = list(range(len(incs)))
@@ -88,7 +90,7 @@ def incident_correlation(ctx: AgentContext) -> AgentResult:
                                 "high" if len(g) >= 4 else "moderate", lat, lon))
     return ok(f"{len(clusters)} spatio-temporal incident cluster(s) found among {len(incs)} geolocated incidents.", confidence=0.65,
               method=f"spatiotemporal:union_find(r={radius}km,Δt={hours}h)", findings=findings, metrics={"clusters": out},
-              extra_refs=[records_ref("incidents", len(incs), [i.provenance for i in incs])], provenance={i.provenance for i in incs},
+              extra_refs=[records_ref("incidents", len(incs), [i.provenance for i in incs], incident_ids=(i.id for i in incs))], provenance={i.provenance for i in incs},
               limitations=["Proximity suggests, but does not prove, a common cause."])
 
 
@@ -163,7 +165,10 @@ def disaster_impact(ctx: AgentContext) -> AgentResult:
     return ok(f"{lead}{len(hazards)} hazard signal(s); {len(findings)} significant.", confidence=0.6, method="rules:hazard_screening",
               findings=findings, metrics={"hazards": hazards, "earthquakes_7d_500km": len(quakes), "official_alerts": len(alerts)},
               provenance=prov,
-              extra_refs=[feature_ref("earthquake", len(quakes), "live", "usgs-earthquakes")],
+              extra_refs=[
+                  feature_ref("earthquake", len(quakes), "live", "usgs-earthquakes"),
+                  *([layer_ref("earthquake", (feature for feature, _distance in quakes))] if quakes else []),
+              ],
               limitations=["Screening only — no exposure/vulnerability model (buildings, population) is applied."])
 
 

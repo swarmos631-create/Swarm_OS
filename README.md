@@ -16,6 +16,11 @@ ML pipeline, all delivered as an installable progressive web app (PWA).
 | Operations Map | MapLibre GL + OpenFreeMap (OSM) tiles, clustered layers, feature details, search, 3D OSM buildings mode, and a fallback when WebGL is missing |
 | Agents | 50 registered agents in 10 domains, one shared runtime, a DAG orchestrator (concurrency, timeouts, retries, cancellation, idempotency, persisted handoffs) |
 | AI Workspace | Plan preview, live execution graph, consolidated result with confidence, freshness, limitations, and an approval workflow for proposed actions |
+| Mission Control | City-scoped persisted run queue, dependency graph, per-agent findings, handoffs, recommendation review and disagreement flags |
+| Scenario Lab | Saved rainfall/heat stress runs using the existing deterministic scenario agent and durable task queue |
+| Incident evidence | Operator-managed, audited links from incidents to measurements, agent findings, citizen reports, mapped features and recommendations |
+| Citizen reporting | Public text-only report intake, private reference status lookup and operator-owned triage |
+| SakhiRoute | Best-effort OpenStreetMap route alternatives with mapped incident/help context; no safety score or saved travel history |
 | Local AI | scikit-learn models trained in-repo; optional Ollama / llama.cpp on loopback; deterministic fallbacks; **no hosted LLM APIs** |
 | Model Lab | Reproducible training on synthetic datasets, evaluation gates vs baselines, registry, promote and rollback |
 | Integrations | Open-Meteo weather and air quality, USGS earthquakes, OpenStreetMap/Overpass (live, no key); CPCB via data.gov.in (key needed); IMD (access by arrangement) |
@@ -56,13 +61,11 @@ make run-api        # terminal 1 — API on :8000
 make dev-web        # terminal 2 — Vite on :5173, proxies /api to :8000
 ```
 
-### Deploying (Render API + Vercel frontend)
+### Deployment
 
-The API runs on **Render** (`render.yaml`: a Python web service in Singapore with the full `ml` extra and the
-embedded job worker; it runs `swarmos migrate` on every start). The PWA is built on **Vercel** (`vercel.json`),
-which proxies `/api/*` to the Render service, so the browser stays same-origin (no CORS, cookies unchanged). The
-database is Neon Postgres in Singapore. `SWARMOS_AUTH_DISABLED=true` turns off the sign-in screen. See
-[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#render-api--vercel-frontend).
+The operator has identified Railway as the project's sole deployment target. The repository-root Dockerfile serves
+the PWA and FastAPI backend together, with PostgreSQL for durable production state. Railway's live configuration
+and health have not been verified from this checkout. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ## Commands
 
@@ -78,11 +81,14 @@ database is Neon Postgres in Singapore. `SWARMOS_AUTH_DISABLED=true` turns off t
 ## Documentation
 
 * [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): modules, data model, orchestration, API, SQLite vs PostgreSQL
+* [docs/API.md](docs/API.md): request/response contracts and access controls for the new workflows
+* [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md): live providers, free-tier credentials and data limitations
+* [docs/SAKHIROUTE.md](docs/SAKHIROUTE.md): routing provider, privacy and safety limitations
 * [docs/AGENTS.md](docs/AGENTS.md): the 50 agents, contracts, and how to add one
 * [docs/ML.md](docs/ML.md): datasets, training, evaluation, registry, local LLM setup
 * [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md): data sources, credentials, adding an adapter
 * [docs/SECURITY.md](docs/SECURITY.md): threat model, controls, production hardening
-* [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): production deployment (single node, scaled, Vercel), PostgreSQL/PostGIS, HTTPS, troubleshooting
+* [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): Railway deployment, PostgreSQL, migrations, health checks, troubleshooting
 * [docs/PLAN.md](docs/PLAN.md): implementation plan and checklist
 
 ## Licences and attribution

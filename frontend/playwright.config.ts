@@ -8,6 +8,7 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   fullyParallel: false,
   workers: 1,
+  outputDir: process.env.E2E_OUTPUT_DIR ?? "test-results",
   reporter: [["list"]],
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,

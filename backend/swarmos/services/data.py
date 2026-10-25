@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -37,6 +37,7 @@ class Series:
     entity: str
     points: list[Point]
     fetched_at: datetime | None
+    record_ids: list[int] = field(default_factory=list)
 
     @property
     def values(self) -> list[float]:
@@ -54,6 +55,8 @@ class Series:
             "from": self.points[0].t.isoformat() if self.points else None,
             "to": self.points[-1].t.isoformat() if self.points else None,
             "fetched_at": self.fetched_at.isoformat() if self.fetched_at else None,
+            "record_ids": self.record_ids[-12:],
+            "record_ids_truncated": len(self.record_ids) > 12,
         }
 
 
@@ -100,6 +103,7 @@ class CityData:
                     metric=metric, unit=rows[0].unit, source_id=source_id, provenance=rows[0].provenance, kind=kind,
                     entity=ent, points=[Point(aware(r.observed_at), r.value) for r in rows],  # type: ignore[arg-type]
                     fetched_at=max(aware(r.fetched_at) for r in rows),  # type: ignore[type-var]
+                    record_ids=[r.id for r in rows],
                 )
             )
         return out

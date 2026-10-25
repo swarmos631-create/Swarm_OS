@@ -244,6 +244,25 @@ class IncidentEvent(Base):
     created_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
 
 
+class IncidentEvidence(Base):
+    """Audited link from an incident to an existing city-scoped record."""
+
+    __tablename__ = "incident_evidence"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    incident_id: Mapped[str] = mapped_column(ForeignKey("incidents.id", ondelete="CASCADE"), index=True)
+    source_type: Mapped[str] = mapped_column(String(32))
+    source_id: Mapped[str] = mapped_column(String(64))
+    relationship: Mapped[str] = mapped_column(String(20))  # supports | contradicts | context
+    note: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
+
+    __table_args__ = (
+        CheckConstraint("relationship in ('supports','contradicts','context')", name="relationship_valid"),
+        UniqueConstraint("incident_id", "source_type", "source_id", name="uq_incident_evidence_source"),
+    )
+
+
 class ServiceRequest(Base):
     __tablename__ = "service_requests"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
@@ -290,6 +309,59 @@ class AgentTask(Base):
     )
 
     __table_args__ = (UniqueConstraint("created_by", "idempotency_key", name="uq_task_idem"),)
+
+
+class ScenarioRun(Base):
+    """Saved, reproducible what-if run backed by a durable agent task."""
+
+    __tablename__ = "scenario_runs"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    city_id: Mapped[str] = mapped_column(ForeignKey("cities.id", ondelete="CASCADE"), index=True)
+    task_id: Mapped[str] = mapped_column(ForeignKey("agent_tasks.id", ondelete="CASCADE"), unique=True, index=True)
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    name: Mapped[str] = mapped_column(String(120))
+    params: Mapped[dict] = mapped_column(default=dict)
+    created_at: Mapped[datetime] = mapped_column(TS, default=utcnow, index=True)
+
+    task: Mapped[AgentTask] = relationship()
+
+
+class SituationReport(Base):
+    """Persisted, bounded city-status snapshot captured at one report-generation time."""
+
+    __tablename__ = "situation_reports"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    city_id: Mapped[str] = mapped_column(ForeignKey("cities.id", ondelete="CASCADE"), index=True)
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    title: Mapped[str] = mapped_column(String(160))
+    snapshot: Mapped[dict] = mapped_column(default=dict)
+    created_at: Mapped[datetime] = mapped_column(TS, default=utcnow, index=True)
+
+
+class InterventionOutcome(Base):
+    """Operator-reported outcome of an approved intervention, with optional observed-data references."""
+
+    __tablename__ = "intervention_outcomes"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    action_id: Mapped[str] = mapped_column(ForeignKey("proposed_actions.id", ondelete="CASCADE"), unique=True, index=True)
+    city_id: Mapped[str] = mapped_column(ForeignKey("cities.id", ondelete="CASCADE"), index=True)
+    recorded_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    outcome: Mapped[str] = mapped_column(String(20))  # improved | unchanged | worsened | unverified
+    note: Mapped[str] = mapped_column(Text)
+    measurement_ids: Mapped[list] = mapped_column(default=list)
+    recorded_at: Mapped[datetime] = mapped_column(TS, default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(TS, default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (CheckConstraint("outcome in ('improved','unchanged','worsened','unverified')", name="outcome_valid"),)
+
+
+class SharedRateLimitBucket(Base):
+    """Hashed fixed-window counters shared by API replicas through their common database."""
+
+    __tablename__ = "shared_rate_limit_buckets"
+    bucket_key: Mapped[str] = mapped_column(String(96), primary_key=True)
+    hits: Mapped[int] = mapped_column(Integer, nullable=False)
+    expires_at: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
 
 
 class AgentExecution(Base):
