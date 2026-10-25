@@ -321,14 +321,18 @@ def ensure_city_data(db: Session, settings: Settings, city: City) -> None:
     clock = time.monotonic()
     if clock - _checked.get(city.id, -1e9) < 60:
         return
-    _checked[city.id] = clock
     _queue_real_places(db, settings, city)
     if not simulation_enabled(settings, city):
+        _checked[city.id] = clock
         return
     latest = _latest_demo(db, city)
     now = floor_hour(utcnow())
     with _guard:
         lock = _locks.setdefault(city.id, threading.Lock())
+    # Throttle only once the city has data: concurrent first-visit requests (dashboard, map layers, features…) must
+    # all wait for the data being generated, not answer from an empty city.
+    if latest is not None:
+        _checked[city.id] = clock
     if latest is not None and _layout_outdated(db, city) and not lock.locked():
         # Simulated records from an older layout (same incident list in every city, points on water): rebuild them.
         threading.Thread(target=_relayout_in_background, args=(city.id, lock), daemon=True).start()
@@ -344,6 +348,9 @@ def ensure_city_data(db: Session, settings: Settings, city: City) -> None:
                 seed_series(db, city)
                 db.commit()
                 log.info("simulated_city_seeded", extra={"city": city.id})
+            else:
+                db.expire_all()  # another request just generated it: read the new rows
+        _checked[city.id] = time.monotonic()
         return
     if lock.locked():
         return
@@ -416,6 +423,44 @@ def _refresh_in_background(city_id: str, lock: threading.Lock) -> None:
         log.exception("simulated_city_refresh_failed", extra={"city": city_id})
     finally:
         lock.release()
+
+
+def prebuild_cities(settings: Settings, stop: threading.Event | None = None, pause_s: float = 0.5,
+                    city_ids: list[str] | None = None) -> int:
+    """Generate simulated data for every city that has none yet, so no visitor waits for it on a first visit.
+
+    Runs in a background thread after startup: pilot cities first, then the largest cities. Each city takes a few
+    seconds (land/water mask download + about 8,000 records); the per-city lock is shared with ensure_city_data, so a
+    visitor opening a city that is being built just waits for that one city.
+    """
+    from swarmos.db import session_scope
+
+    built = 0
+    with session_scope() as db:
+        cities = [c for c in db.scalars(select(City).where(City.is_active.is_(True))) if city_ids is None or c.id in city_ids]
+        order = [c.id for c in sorted(cities, key=lambda c: (not c.is_pilot, -(c.population or 0), c.name))
+                 if simulation_enabled(settings, c)]
+    for city_id in order:
+        if stop is not None and stop.is_set():
+            break
+        with _guard:
+            lock = _locks.setdefault(city_id, threading.Lock())
+        try:
+            with lock, session_scope() as db:
+                city = db.get(City, city_id)
+                if city is None or _latest_demo(db, city) is not None:
+                    continue
+                t0 = time.monotonic()
+                seed_static(db, city)
+                seed_series(db, city)
+                db.commit()
+                built += 1
+                log.info("simulated_city_prebuilt", extra={"city": city_id, "seconds": round(time.monotonic() - t0, 1)})
+        except Exception:  # pragma: no cover - logged; the city is then built on its first visit instead
+            log.exception("simulated_city_prebuild_failed", extra={"city": city_id})
+        time.sleep(pause_s)  # leave room for requests and the job worker between cities
+    log.info("simulated_cities_prebuild_finished", extra={"built": built, "cities": len(order)})
+    return built
 
 
 def bootstrap(db: Session, settings: Settings, *, demo: bool | None = None) -> dict[str, object]:
