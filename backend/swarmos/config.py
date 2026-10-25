@@ -77,6 +77,10 @@ class Settings(BaseSettings):
 
     # Data
     demo_mode: bool = True
+    # Generate simulated data for every city on first visit (not only the pilot cities). Needs demo_mode.
+    simulate_all_cities: bool = True
+    # Train any configured ML model that has no promoted version when the API starts (needs the `ml` extra).
+    auto_train_models: bool = True
     demo_pilot_cities: CsvList = Field(default_factory=lambda: ["bengaluru", "mumbai", "delhi"])
     http_timeout_seconds: float = 15.0
     http_user_agent: str = "SwarmOS/0.1 (+https://github.com/swarmos631-create/Swarm_OS)"
@@ -96,6 +100,9 @@ class Settings(BaseSettings):
     ogd_api_key: str | None = None  # data.gov.in key — required for CPCB station feed
     ogd_cpcb_resource_id: str = "3b01bcb8-0b14-4abf-b6f2-c1bfd384ba69"
     imd_api_base_url: str | None = None  # IMD access is by arrangement; unset == unavailable
+    # MapmyIndia (Mappls) static key — real facility locations via the Mappls nearby-places API.
+    mappls_api_key: str | None = Field(default=None, validation_alias=AliasChoices("SWARMOS_MAPPLS_API_KEY", "MAPPLS_API_KEY", "VITE_MAPPLS_KEY"))
+    mappls_search_radius_m: int = Field(default=12000, ge=1000, le=50000)
 
     # Worker / orchestration
     # "worker": a long-running worker (embedded thread or `swarmos worker`) drains the job queue.
