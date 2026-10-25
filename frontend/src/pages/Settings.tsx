@@ -1,5 +1,4 @@
 import { Panel } from "../components/ui";
-import { hasMappls, useBaseMap } from "../components/map/mappls";
 import { Icon, type IconName } from "../lib/icons";
 import { ACCENTS, useTheme, type ThemePref } from "../state/theme";
 
@@ -12,7 +11,6 @@ const MODES: { id: ThemePref; label: string; hint: string; icon: IconName }[] = 
 /** Appearance settings: light / dark / system mode and the colour theme that replaces the brand gradient everywhere. */
 export default function SettingsPage() {
   const { pref, setPref, accent, setAccent, theme } = useTheme();
-  const [base, setBase] = useBaseMap();
   const current = ACCENTS.find((a) => a.id === accent) ?? ACCENTS[0];
 
   return (
@@ -20,7 +18,7 @@ export default function SettingsPage() {
       <div className="page-head">
         <div>
           <h1>Settings</h1>
-          <p>Appearance is saved on this device and applies to every page and map.</p>
+          <p>Appearance is saved on this device and applies to every page and the MapmyIndia maps.</p>
         </div>
         <button className="btn ghost" onClick={() => { setPref("system"); setAccent("aurora"); }}><Icon name="refresh" />Reset to default</button>
       </div>
@@ -66,14 +64,6 @@ export default function SettingsPage() {
         <div className="progress" style={{ marginTop: 14 }}><span style={{ width: "68%" }} /></div>
       </Panel>
 
-      {hasMappls && (
-        <Panel title="Default map" icon="map">
-          <div className="mode-cards" role="group" aria-label="Default base map">
-            <button type="button" className="mode-card" aria-pressed={base === "mappls"} onClick={() => setBase("mappls")}><Icon name="map" /><span>MapmyIndia</span></button>
-            <button type="button" className="mode-card" aria-pressed={base === "osm"} onClick={() => setBase("osm")}><Icon name="cube" /><span>OpenFreeMap 3D</span></button>
-          </div>
-        </Panel>
-      )}
     </>
   );
 }
