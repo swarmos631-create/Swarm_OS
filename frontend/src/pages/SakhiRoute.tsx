@@ -39,6 +39,8 @@ interface MappedFeatureEvidence {
   provenance: string;
   distance_to_sampled_route_m: number;
   wheelchair: string | null;
+  lighting_tag?: string | null;
+  lamp_type?: string | null;
   observed_at: string | null;
   fetched_at: string | null;
 }
@@ -249,6 +251,7 @@ function RouteCard({ route, index }: { route: RouteOption; index: number }) {
         {mappedEvidence.length ? <ul className="stack" style={{ paddingLeft: 18, margin: "8px 0" }}>
           {mappedEvidence.map((item) => <li key={`${item.source_id}/${item.external_id}`}>
             <b>{item.name || item.layer.replaceAll("_", " ")}</b> · {item.distance_to_sampled_route_m} m from sampled route{item.layer !== "street_light" ? ` · wheelchair: ${item.wheelchair || "unknown"}` : ""}<br />
+            {item.layer === "street_light" && <span className="xs faint">{item.lighting_tag ? `Mapped lit tag: ${item.lighting_tag} (unverified)` : "No mapped lit tag"}{item.lamp_type ? ` · lamp type: ${item.lamp_type}` : ""}<br /></span>}
             <span className="xs faint">{item.source_id} · {item.provenance} · fetched {item.fetched_at ? new Date(item.fetched_at).toLocaleString() : "time unavailable"}</span><br />
             {item.source_id === "osm-overpass" && /^(node|way|relation)\/\d+$/.test(item.external_id)
               ? <a className="xs" href={`https://www.openstreetmap.org/${item.external_id}`} target="_blank" rel="noreferrer">Inspect OpenStreetMap feature ↗</a>

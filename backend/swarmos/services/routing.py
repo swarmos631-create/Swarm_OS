@@ -138,6 +138,8 @@ def _context(db: Session, city_id: str, geometry: list[list[float]]) -> dict[str
             "provenance": row.provenance,
             "distance_to_sampled_route_m": round(distance * 1000),
             "wheelchair": props.get("wheelchair"),
+            "lighting_tag": props.get("lit") if row.layer in STREET_LIGHT_LAYERS else None,
+            "lamp_type": props.get("lamp_type") if row.layer in STREET_LIGHT_LAYERS else None,
             "observed_at": row.observed_at.isoformat() if row.observed_at else None,
             "fetched_at": row.fetched_at.isoformat() if row.fetched_at else None,
         })

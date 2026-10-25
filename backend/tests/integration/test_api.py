@@ -225,7 +225,7 @@ def test_sakhi_route_returns_real_route_shape_and_caveats_without_storage(client
         db.add(GeoFeature(city_id="bengaluru", source_id="osm-overpass", layer="street_light",
                           external_id="node/sakhi-route-lamp", name="Mapped street lamp",
                           lat=12.975, lon=77.595, properties={"lit": "yes"}, provenance="live"))
-        for provenance, source in (("live", "verified-feed"), ("public", "citizen-portal"), ("demo", "swarmos-demo")):
+        for provenance, source in (("live", "incident-feed"), ("public", "citizen-portal"), ("demo", "swarmos-demo")):
             db.add(Incident(city_id="bengaluru", title=f"{provenance} route context", category="streetlight",
                             severity="moderate", status="open", lat=12.975, lon=77.595,
                             provenance=provenance, source=source))
@@ -269,6 +269,8 @@ def test_sakhi_route_returns_real_route_shape_and_caveats_without_storage(client
     assert len(evidence) == 6 and not data["routes"][0]["context"]["mapped_feature_evidence_truncated"]
     assert evidence[0]["external_id"] == "test/bus-station-sakhi-route"
     assert evidence[0]["source_id"] == "osm-vector-tiles" and evidence[0]["wheelchair"] == "yes"
+    lamp_evidence = next(item for item in evidence if item["layer"] == "street_light")
+    assert lamp_evidence["lighting_tag"] == "yes" and lamp_evidence["lamp_type"] is None
     assert any("transit counts" in item.lower() for item in data["limitations"])
     assert any("wheelchair values" in item.lower() for item in data["limitations"])
     assert any("street-lamp points" in item.lower() for item in data["limitations"])

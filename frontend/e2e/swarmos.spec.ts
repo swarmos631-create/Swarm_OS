@@ -187,9 +187,14 @@ test("SakhiRoute compares real-route response context and opens mapped evidence"
           street_light_features_checked: 1, mapped_street_lamp_points_within_100m: 2,
           mapped_wheelchair_accessibility_within_500m: { yes: 1, limited: 0, no: 0, designated: 0, unknown: 1 },
           wheelchair_features_near_route: 2,
-          mapped_feature_evidence: [{ source_id: "osm-overpass", external_id: "node/123456", name: "Central Clinic",
-            layer: "clinic", provenance: "live", distance_to_sampled_route_m: 86, wheelchair: "yes",
-            observed_at: null, fetched_at: "2026-10-25T10:00:00Z" }],
+          mapped_feature_evidence: [
+            { source_id: "osm-overpass", external_id: "node/123456", name: "Central Clinic",
+              layer: "clinic", provenance: "live", distance_to_sampled_route_m: 86, wheelchair: "yes",
+              observed_at: null, fetched_at: "2026-10-25T10:00:00Z" },
+            { source_id: "osm-overpass", external_id: "node/123457", name: "Mapped street lamp",
+              layer: "street_light", provenance: "live", distance_to_sampled_route_m: 95, wheelchair: null,
+              lighting_tag: "yes", lamp_type: "LED", observed_at: null, fetched_at: "2026-10-25T10:00:00Z" },
+          ],
           mapped_feature_evidence_truncated: true, context_truncated: true,
           provenance: ["live"],
         },
@@ -212,9 +217,10 @@ test("SakhiRoute compares real-route response context and opens mapped evidence"
   await expect(routeCard).toContainText("Origin is not verification");
   await expect(routeCard).toContainText("yes 1");
   await expect(routeCard).toContainText("Community-mapped street-lamp points within 100 m: 2");
-  await page.getByText("Inspect mapped facility evidence (1+)").click();
+  await page.getByText("Inspect mapped facility evidence (2+)").click();
   await expect(page.getByText("Central Clinic")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Inspect OpenStreetMap feature ↗" })).toHaveAttribute("href", "https://www.openstreetmap.org/node/123456");
+  await expect(routeCard).toContainText("Mapped lit tag: yes (unverified) · lamp type: LED");
+  await expect(page.getByRole("link", { name: "Inspect OpenStreetMap feature ↗" }).first()).toHaveAttribute("href", "https://www.openstreetmap.org/node/123456");
   await expect(routeCard).toContainText("Counts and evidence are incomplete lower bounds.");
   await expect(page.getByText(/Mapped street-lamp points are community-mapped/)).toBeVisible();
 });
