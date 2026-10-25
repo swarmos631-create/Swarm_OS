@@ -57,6 +57,9 @@ class Series:
         }
 
 
+PROVENANCE_RANK = {"live": 0, "cached": 1, "operator": 2, "derived": 3, "demo": 4, "synthetic": 5}
+
+
 class CityData:
     """Facade over persisted data for one city. Agents receive this — never a raw session."""
 
@@ -106,31 +109,47 @@ class CityData:
         options = self.series(metric, **kw)
         if not options:
             return None
-        rank = {"live": 0, "cached": 1, "operator": 2, "derived": 3, "demo": 4, "synthetic": 5}
-        return sorted(options, key=lambda s: (rank.get(s.provenance, 9), -len(s.points)))[0]
+        return sorted(options, key=lambda s: (PROVENANCE_RANK.get(s.provenance, 9), -len(s.points)))[0]
 
     def forecast_rows(self, metric: str, limit: int = 3) -> list[Measurement]:
-        q = select(Measurement).where(
+        """Upcoming forecast rows from a single source, live sources first (never a mix of live and simulated)."""
+        base = select(Measurement).where(
             Measurement.city_id == self.city.id, Measurement.metric == metric, Measurement.kind == "forecast",
             Measurement.observed_at >= self.now - timedelta(hours=24),
-        ).order_by(Measurement.observed_at).limit(limit)
-        return list(self.db.scalars(q))
+        )
+        sources = list(self.db.execute(select(Measurement.source_id, Measurement.provenance).where(
+            Measurement.city_id == self.city.id, Measurement.metric == metric, Measurement.kind == "forecast",
+            Measurement.observed_at >= self.now - timedelta(hours=24)).distinct()))
+        if not sources:
+            return []
+        source_id = sorted(sources, key=lambda r: (PROVENANCE_RANK.get(r[1], 9), r[0]))[0][0]
+        return list(self.db.scalars(base.where(Measurement.source_id == source_id).order_by(Measurement.observed_at).limit(limit)))
 
-    def entities(self, category: str, hours_back: float = 72) -> list[str]:
+    def entities(self, category: str, hours_back: float = 72, *, live_first: bool = True) -> list[str]:
+        """Entities (corridors, stations, …) with recent data. When a live feed reports any entity, only live
+        entities are returned, so live and simulated corridors are never mixed in one analysis."""
         q = select(Measurement.entity).where(
             Measurement.city_id == self.city.id, Measurement.category == category,
             Measurement.observed_at >= self.now - timedelta(hours=hours_back),
         ).distinct()
+        if live_first:
+            live = sorted(self.db.scalars(q.where(Measurement.provenance.in_(("live", "cached", "operator")))))
+            if live:
+                return live
         return sorted(self.db.scalars(q))
 
     def latest(self, metric: str, *, entity: str = "city", category: str | None = None) -> Measurement | None:
+        """Most recent value; a live reading from the last 6 hours wins over a newer simulated one."""
         q = select(Measurement).where(
             Measurement.city_id == self.city.id, Measurement.metric == metric, Measurement.entity == entity,
             Measurement.kind.in_(("observation", "model_analysis")), Measurement.observed_at <= self.now,
         )
         if category:
             q = q.where(Measurement.category == category)
-        return self.db.scalars(q.order_by(Measurement.observed_at.desc()).limit(1)).first()
+        live = self.db.scalars(q.where(Measurement.provenance.in_(("live", "cached", "operator")),
+                                       Measurement.observed_at >= self.now - timedelta(hours=6))
+                               .order_by(Measurement.observed_at.desc()).limit(1)).first()
+        return live or self.db.scalars(q.order_by(Measurement.observed_at.desc()).limit(1)).first()
 
     def has_category(self, category: str, hours_back: float = 24 * 30) -> bool:
         return bool(
