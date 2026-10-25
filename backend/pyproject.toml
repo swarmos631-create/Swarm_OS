@@ -19,6 +19,7 @@ dependencies = [
   "numpy>=2.1",
   "pyyaml>=6.0",
   "psycopg[binary]>=3.2",
+  "defusedxml>=0.7",
 ]
 
 [project.optional-dependencies]
@@ -38,7 +39,7 @@ entrypoint = "swarmos.main:app"
 include = ["swarmos*"]
 
 [tool.setuptools.package-data]
-swarmos = ["cities/data/*.json", "demo/documents/*.md", "demo/*.json", "ml/configs/*.yaml"]
+swarmos = ["cities/data/*.json", "demo/documents/*.md", "demo/documents/reference/*.md", "demo/*.json", "ml/configs/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
