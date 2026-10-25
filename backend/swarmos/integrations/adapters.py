@@ -855,7 +855,7 @@ class TomTomTraffic(Adapter):
         ),
         setup=(
             "1. Sign up at https://developer.tomtom.com and create an API key (the free tier is enough).\n"
-            "2. Render → swarmos-api → Environment → add SWARMOS_TOMTOM_API_KEY and save.\n"
+            "2. Railway → Swarm_OS → Variables → add SWARMOS_TOMTOM_API_KEY and save.\n"
             "3. Open a city; its live road speeds sync automatically within a minute."
         ),
     )
@@ -929,10 +929,11 @@ class OgdCpcbAqi(Adapter):
         limitations=(
             "Values are hourly station averages as published; the platform occasionally lags or omits stations.",
             "Field names of the OGD resource have changed historically; the adapter accepts both known schemas.",
+            "data.gov.in only answers requests from Indian networks, so it fails from servers abroad — use OpenAQ there.",
         ),
         setup=(
             "1. Register at https://data.gov.in and generate an API key.\n"
-            "2. Render → swarmos-api → Environment → add SWARMOS_OGD_API_KEY and save (never commit it).\n"
+            "2. Railway → Swarm_OS → Variables → add SWARMOS_OGD_API_KEY and save (never commit it).\n"
             "3. Open any city; its CPCB stations sync automatically (or use 'Sync now' on the Integrations page)."
         ),
     )
@@ -996,6 +997,131 @@ def normalize_cpcb(records: list[dict[str, Any]]) -> SyncPayload:
                       "max": _num(r.get("max_value", r.get("pollutant_max")))},
             )
         )
+    return out
+
+
+# --------------------------------------------------------------------------- OpenAQ — CPCB and other station data
+
+OPENAQ_PARAMS = {"pm25": "pm2_5", "pm10": "pm10", "no2": "nitrogen_dioxide", "so2": "sulphur_dioxide",
+                 "o3": "ozone", "co": "carbon_monoxide", "nh3": "ammonia"}
+# µg/m³ per ppm at 25 °C — OpenAQ reports some gases in ppm; CPCB (and the agents) use µg/m³ (CO in mg/m³).
+PPM_TO_UGM3 = {"nitrogen_dioxide": 1880.0, "sulphur_dioxide": 2620.0, "ozone": 1960.0, "ammonia": 696.0,
+               "carbon_monoxide": 1145.0}
+OPENAQ_MAX_LOCATIONS = 25
+
+
+def openaq_value(metric: str, value: float, units: str) -> float | None:
+    """Convert an OpenAQ reading to the units SwarmOS uses (µg/m³; CO in mg/m³)."""
+    u = (units or "").strip().lower().replace("ug", "µg")
+    if u in ("µg/m³", "µg/m3"):
+        v = value
+    elif u == "ppm":
+        v = value * PPM_TO_UGM3.get(metric, float("nan"))
+    elif u == "ppb":
+        v = value / 1000 * PPM_TO_UGM3.get(metric, float("nan"))
+    elif u in ("mg/m³", "mg/m3"):
+        v = value * 1000
+    else:
+        return None
+    if v != v or v < 0:  # NaN (unknown gas) or a negative sensor glitch
+        return None
+    return round(v / 1000, 3) if metric == "carbon_monoxide" else round(v, 2)
+
+
+class OpenAqStations(Adapter):
+    spec = SourceSpec(
+        id="openaq-stations",
+        name="OpenAQ — CPCB and state monitoring stations (live air quality)",
+        kind="api",
+        categories=("air_quality_station",),
+        coverage="Every Indian city with a CPCB / state pollution control board monitoring station (re-published by OpenAQ)",
+        auth_required="OpenAQ API key (free) — SWARMOS_OPENAQ_API_KEY",
+        license="Open data; most Indian stations CC BY 4.0 (CPCB via OpenAQ)",
+        attribution="Central Pollution Control Board and state boards, via OpenAQ",
+        homepage="https://docs.openaq.org/",
+        freshness_threshold_s=3 * HOUR,
+        min_sync_interval_s=45 * 60,
+        scope="city",
+        limitations=(
+            "Hourly station averages as re-published by OpenAQ; a station can lag by an hour or two.",
+            f"Up to {OPENAQ_MAX_LOCATIONS} active stations per city (within 25 km of the centre) to stay inside the free rate limit.",
+        ),
+        setup=(
+            "1. Create a free account at https://explore.openaq.org and copy your API key (Account → API key).\n"
+            "2. Railway → Swarm_OS → Variables → add SWARMOS_OPENAQ_API_KEY and save.\n"
+            "3. Open any city; its monitoring stations sync automatically (or use 'Sync now' on the Integrations page)."
+        ),
+    )
+
+    def configured(self, settings: Settings) -> tuple[bool, str | None]:
+        return (True, None) if settings.openaq_api_key else (False, "SWARMOS_OPENAQ_API_KEY is not set")
+
+    async def fetch(self, client: httpx.AsyncClient, settings: Settings, city: City | None) -> SyncPayload:
+        assert city is not None
+        headers = {"X-API-Key": str(settings.openaq_api_key), "Accept": "application/json"}
+        data = await request_json(
+            client, "GET", "https://api.openaq.org/v3/locations",
+            params={"coordinates": f"{city.lat:.4f},{city.lon:.4f}", "radius": 25000, "limit": 100},
+            headers=headers, timeout=settings.http_timeout_seconds)
+        cutoff = datetime.now(UTC) - timedelta(days=2)
+        locations = []
+        for loc in (data or {}).get("results") or []:
+            last = _parse_iso(((loc.get("datetimeLast") or {}).get("utc")))
+            sensors = {s.get("id"): s for s in loc.get("sensors") or [] if
+                       OPENAQ_PARAMS.get(str((s.get("parameter") or {}).get("name", "")).lower())}
+            if last and last >= cutoff and sensors:
+                locations.append((last, loc, sensors))
+        locations.sort(key=lambda t: t[0], reverse=True)  # freshest stations first
+        out = SyncPayload()
+        errors: list[IntegrationError] = []
+        for _, loc, sensors in locations[:OPENAQ_MAX_LOCATIONS]:
+            try:
+                latest = await request_json(client, "GET", f"https://api.openaq.org/v3/locations/{loc['id']}/latest",
+                                            headers=headers, timeout=settings.http_timeout_seconds, retries=1)
+            except IntegrationError as exc:
+                if exc.kind == "auth":
+                    raise
+                errors.append(exc)
+                continue
+            out.measurements.extend(normalize_openaq(loc, sensors, (latest or {}).get("results") or []))
+        if not locations:
+            return out  # no monitoring station near this city: nothing to add, not an error
+        if not out.measurements and errors:
+            raise errors[0]
+        return out
+
+
+def _parse_iso(v: Any) -> datetime | None:
+    if not v:
+        return None
+    try:
+        d = datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return d if d.tzinfo else d.replace(tzinfo=UTC)
+
+
+def normalize_openaq(loc: dict[str, Any], sensors: dict[Any, dict[str, Any]], latest: list[dict[str, Any]]) -> list[NormalizedMeasurement]:
+    coords = loc.get("coordinates") or {}
+    lat, lon = _num(coords.get("latitude")), _num(coords.get("longitude"))
+    station = str(loc.get("name") or f"OpenAQ {loc.get('id')}")[:120]
+    out: list[NormalizedMeasurement] = []
+    for r in latest:
+        s = sensors.get(r.get("sensorsId"))
+        val = _num(r.get("value"))
+        observed = _parse_iso((r.get("datetime") or {}).get("utc"))
+        if s is None or val is None or observed is None:
+            continue
+        p = s.get("parameter") or {}
+        metric = OPENAQ_PARAMS[str(p.get("name", "")).lower()]
+        v = openaq_value(metric, val, str(p.get("units", "")))
+        if v is None:
+            continue
+        out.append(NormalizedMeasurement(
+            category="air_quality_station", metric=metric, value=v, unit=POLLUTANT_UNIT.get(metric, "µg/m³"),
+            observed_at=observed.replace(second=0, microsecond=0), kind="observation", entity=station, lat=lat, lon=lon,
+            meta={"openaq_location": loc.get("id"), "provider": (loc.get("provider") or {}).get("name"),
+                  "owner": (loc.get("owner") or {}).get("name")}))
     return out
 
 
@@ -1139,8 +1265,8 @@ class MapplsPlaces(Adapter):
         setup=(
             "1. In the Mappls console (https://auth.mappls.com/console) open your project → Credentials.\n"
             "2. Copy the Client ID and Client Secret (preferred), or create a REST key without a website-domain restriction.\n"
-            "3. Render → swarmos-api → Environment → add SWARMOS_MAPPLS_CLIENT_ID and SWARMOS_MAPPLS_CLIENT_SECRET "
-            "(or SWARMOS_MAPPLS_API_KEY) and save; Render restarts the service.\n"
+            "3. Railway → Swarm_OS → Variables → add SWARMOS_MAPPLS_CLIENT_ID and SWARMOS_MAPPLS_CLIENT_SECRET "
+            "(or SWARMOS_MAPPLS_API_KEY) and save; Railway redeploys the service.\n"
             "4. The browser key VITE_MAPPLS_KEY stays as it is — it is only used by the website map."
         ),
     )
@@ -1230,6 +1356,7 @@ ADAPTERS: dict[str, Adapter] = {
         GdacsAlerts(),
         OsmVectorTiles(),
         OsmOverpass(),
+        OpenAqStations(),
         OgdCpcbAqi(),
         MapplsPlaces(),
         TomTomTraffic(),
