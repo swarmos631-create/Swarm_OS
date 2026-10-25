@@ -1,7 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "../../api/client";
+import { mapLayersQuery } from "../../api/queries";
 import type { City, Dashboard, Severity } from "../../api/types";
 import { ago, fmtNum, titleCase } from "../../lib/format";
 import { Icon } from "../../lib/icons";
@@ -31,16 +32,14 @@ export default function OpsMap({ city, dashboard: d, severity, showIncidents, sh
   const [mpl, setMpl] = useState<MapLike | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
 
-  const layersQ = useQuery({
-    queryKey: ["map-layers", city.id],
-    queryFn: () => api<{ layers: { id: string }[] }>(`/cities/${city.id}/map/layers`),
-  });
+  const layersQ = useQuery(mapLayersQuery<{ layers: { id: string }[] }>(city.id));
   const layers = (layersQ.data?.layers ?? []).map((l) => l.id).filter((id) => WANTED.includes(id));
   const featQ = useQuery({
     queryKey: ["map-features", city.id, layers.join(",")],
     queryFn: () => api<FC>(`/cities/${city.id}/map/features`, { query: { layers: layers.join(",") } }),
     enabled: layers.length > 0,
     refetchInterval: 120_000,
+    placeholderData: keepPreviousData,
   });
 
   useEffect(() => setFailed(null), [city.id]);
