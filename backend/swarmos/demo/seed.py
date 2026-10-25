@@ -28,6 +28,7 @@ from swarmos.config import REPO_ROOT, Settings
 from swarmos.core.security import hash_password
 from swarmos.db import utcnow
 from swarmos.demo import simulate
+from swarmos.demo.landmask import Placer, land_mask
 from swarmos.integrations.base import NormalizedFeature, NormalizedMeasurement, SyncPayload
 from swarmos.integrations.sync import persist_payload, sync_registry
 from swarmos.ml import complaints, synthetic
@@ -45,6 +46,8 @@ from swarmos.models import (
 
 log = logging.getLogger("swarmos.simulate")
 DEMO = "swarmos-demo"
+# Bump when the layout of simulated static records changes; older cities are regenerated on their next visit.
+SIM_VERSION = 2
 SCALE = {"bengaluru": 1.0, "mumbai": 1.2, "delhi": 1.7}
 DEV_USERS = [
     ("admin@swarmos.local", "Dev Admin", "admin", True),
@@ -98,10 +101,6 @@ def seed_documents(db: Session) -> int:
     return n
 
 
-def _offset(city: City, rng: random.Random, spread: float = 0.08) -> tuple[float, float]:
-    return round(city.lat + rng.uniform(-spread, spread), 5), round(city.lon + rng.uniform(-spread, spread), 5)
-
-
 def _scale(city: City) -> float:
     return SCALE.get(city.id) or max(0.25, min(2.0, (city.population or 3_000_000) / 8_000_000))
 
@@ -114,6 +113,8 @@ def seed_series(db: Session, city: City, now: datetime | None = None) -> int:
     now = floor_hour(now or utcnow())
     start14 = now - timedelta(hours=24 * 14 - 1)
     db.execute(delete(Measurement).where(Measurement.city_id == city.id, Measurement.source_id == DEMO))
+    # Sensor positions: stable per city, inside its bounds and never on water.
+    placer = Placer(city, random.Random(f"place-series:{city.id}"), land_mask(city))
 
     m: list[NormalizedMeasurement] = []
 
@@ -129,7 +130,7 @@ def seed_series(db: Session, city: City, now: datetime | None = None) -> int:
         t, v = synthetic.corridor_speed(start14, 24 * 14, seed + i, freeflow=free)
         if i == 3:
             v[-3:] *= 0.45  # injected current congestion
-        lat, lon = _offset(city, rng)
+        lat, lon = placer.point(0.18)
         add_series("traffic", "speed_kmph", "km/h", t, v, entity=label, lat=lat, lon=lon)
         add_series("traffic", "freeflow_speed_kmph", "km/h", [now], [free], entity=label, lat=lat, lon=lon, meta={"lat": lat, "lon": lon})
 
@@ -139,11 +140,11 @@ def seed_series(db: Session, city: City, now: datetime | None = None) -> int:
     for i in range(4):
         leak_from = 24 * 12 if i == 2 else None
         t, v = synthetic.dma_flow(start14, 24 * 14, seed + 20 + i, base=rng.uniform(220, 420), leak_from_hour=leak_from, leak_m3h=120)
-        lat, lon = _offset(city, rng)
+        lat, lon = placer.point(0.18)
         add_series("water", "flow_m3h", "m³/h", t, v, entity=f"DMA-{i + 1:02d}", lat=lat, lon=lon)
     t48 = [now - timedelta(hours=h) for h in range(47, -1, -1)]
     for i, site in enumerate(["Treatment plant outlet", "Reservoir R2", "Distribution node N7"]):
-        lat, lon = _offset(city, rng)
+        lat, lon = placer.point(0.18)
         ph = [rng.uniform(7.0, 7.8) for _ in t48]
         turb = [rng.uniform(0.3, 0.9) for _ in t48]
         cl = [rng.uniform(0.3, 0.8) for _ in t48]
@@ -204,15 +205,17 @@ def seed_static(db: Session, city: City, *, reset: bool = False) -> dict[str, in
     rng = random.Random(f"demo-static:{city.id}")
     seed = sum(ord(c) for c in city.id)
     now = floor_hour(utcnow())
+    # Every simulated location lies inside this city's bounds and on land (sea, lakes and rivers are excluded).
+    placer = Placer(city, random.Random(f"place-static:{city.id}"), land_mask(city))
     feats = []
     for i in range(12):
         layer = "asset_bridge" if i < 4 else "asset_road"
-        lat, lon = _offset(city, rng)
-        feats.append(NormalizedFeature(layer=layer, external_id=f"demo-asset-{i}", name=f"{'Flyover' if i < 4 else 'Road segment'} D{i + 1}",
-                                       lat=lat, lon=lon, properties={"condition_index": rng.randint(15, 95),
+        lat, lon = placer.point(0.18)
+        feats.append(NormalizedFeature(layer=layer, external_id=f"demo-asset-{i}", name=f"{'Flyover' if i < 4 else 'Road segment'} {city.name} {i + 1}",
+                                       lat=lat, lon=lon, properties={"condition_index": rng.randint(15, 95), "sim_v": SIM_VERSION,
                                                                      "last_inspected": f"202{rng.randint(2, 5)}-0{rng.randint(1, 9)}-15"}))
     real_layers = set(db.scalars(select(GeoFeature.layer).where(GeoFeature.city_id == city.id, GeoFeature.provenance != "demo").distinct()))
-    feats.extend(f for f in simulate.facilities(city) if f.layer not in real_layers)
+    feats.extend(f for f in simulate.facilities(city, place=placer.point) if f.layer not in real_layers)
     n = persist_payload(db, DEMO, city, SyncPayload(features=feats), provenance="demo")
 
     # Incidents
@@ -222,13 +225,22 @@ def seed_static(db: Session, city: City, *, reset: bool = False) -> dict[str, in
                  ("Garbage accumulation near market", "garbage", "low"), ("Building wall collapse risk", "structural", "critical"),
                  ("Traffic signal malfunction", "mobility", "moderate"), ("Open excavation without barricade", "construction", "moderate"),
                  ("Medical emergency at bus station", "medical", "high"), ("Sewage overflow on street", "water", "moderate")]
+    templates += [("Pothole cluster on main road", "road", "moderate"), ("Streetlights not working", "energy", "low"),
+                  ("Stray cattle on highway", "road", "moderate"), ("Gas leak smell reported", "fire", "critical"),
+                  ("Illegal dumping of debris", "garbage", "low"), ("Tree branch on power line", "energy", "high")]
+    # Each city gets its own mix: shuffled templates, city-sized count, its own ward numbers and severities.
+    rng.shuffle(templates)
+    lakhs = max(2.0, (city.population or 1_000_000) / 1e5)
+    wards = int(min(250, max(20, lakhs * 1.5)))
     incidents = 0
-    for i in range(18):
+    for i in range(int(min(26, max(10, 8 + lakhs / 8 + rng.randint(-3, 3))))):
         title, cat, sev = templates[i % len(templates)]
-        lat, lon = _offset(city, rng, 0.06)
+        if rng.random() < 0.3:
+            sev = rng.choice(["low", "moderate", "high", "critical"])
+        lat, lon = placer.point(0.15)
         reported = now - timedelta(hours=rng.uniform(0.3, 70))
         status = rng.choice(["open", "open", "acknowledged", "in_progress", "resolved"])
-        inc = Incident(city_id=city.id, title=f"{title} — Ward {i % 12 + 1}", description="Simulated incident (generated data).", category=cat,
+        inc = Incident(city_id=city.id, title=f"{title} — Ward {rng.randint(1, wards)}", description=f"Simulated incident in {city.name} (generated data).", category=cat,
                        severity=sev, status=status, lat=lat, lon=lon, provenance="demo", source=DEMO, reported_at=reported,
                        resolved_at=reported + timedelta(hours=rng.uniform(1, 8)) if status == "resolved" else None)
         db.add(inc)
@@ -236,11 +248,18 @@ def seed_static(db: Session, city: City, *, reset: bool = False) -> dict[str, in
         db.add(IncidentEvent(incident_id=inc.id, kind="created", to_status="open", note="Simulated record", created_at=reported))
         incidents += 1
     # Correlated cluster (three incidents close in space and time)
-    clat, clon = _offset(city, rng, 0.03)
-    for j, (title, cat, sev) in enumerate([("Waterlogging on arterial road", "flooding", "high"), ("Vehicle stalled in flood water", "road", "moderate"),
-                                           ("Drain overflow into homes", "flooding", "high")]):
-        db.add(Incident(city_id=city.id, title=title, description="Simulated incident (generated data).", category=cat, severity=sev,
-                        status="open", lat=clat + j * 0.002, lon=clon + j * 0.002, provenance="demo", source=DEMO,
+    clat, clon = placer.point(0.1)
+    cluster_ward = rng.randint(1, wards)
+    clusters = [[("Waterlogging on arterial road", "flooding", "high"), ("Vehicle stalled in flood water", "road", "moderate"),
+                 ("Drain overflow into homes", "flooding", "high")],
+                [("Power cut across neighbourhood", "energy", "high"), ("Traffic signals dark at junction", "mobility", "moderate"),
+                 ("Water pumping stopped", "water", "high")],
+                [("Fire in market building", "fire", "critical"), ("Smoke reported by residents", "fire", "high"),
+                 ("Road blocked by fire tenders", "road", "moderate")]]
+    for j, (title, cat, sev) in enumerate(rng.choice(clusters)):
+        lat, lon = placer.near(clat, clon, 300)
+        db.add(Incident(city_id=city.id, title=f"{title} — Ward {cluster_ward}", description=f"Simulated incident in {city.name} (generated data).",
+                        category=cat, severity=sev, status="open", lat=lat, lon=lon, provenance="demo", source=DEMO,
                         reported_at=now - timedelta(hours=1 + j * 0.5)))
         incidents += 1
 
@@ -253,9 +272,9 @@ def seed_static(db: Session, city: City, *, reset: bool = False) -> dict[str, in
             resolved = created + timedelta(hours=rng.uniform(4, 24 * 10))
             if resolved > now:
                 resolved = None
-        lat, lon = _offset(city, rng, 0.1)
+        lat, lon = placer.point(0.22)
         db.add(ServiceRequest(city_id=city.id, text=r["text"], category=r["category"], classified_by="demo-label",
-                              status="resolved" if resolved else "open", ward=f"Ward {rng.randint(1, 12)}", lat=lat, lon=lon,
+                              status="resolved" if resolved else "open", ward=f"Ward {rng.randint(1, wards)}", lat=lat, lon=lon,
                               provenance="demo", created_at=created, resolved_at=resolved))
     return {"records": n, "incidents": incidents, "service_requests": len(rows)}
 
@@ -296,12 +315,16 @@ def ensure_city_data(db: Session, settings: Settings, city: City) -> None:
         return
     latest = _latest_demo(db, city)
     now = floor_hour(utcnow())
+    with _guard:
+        lock = _locks.setdefault(city.id, threading.Lock())
+    if latest is not None and _layout_outdated(db, city) and not lock.locked():
+        # Simulated records from an older layout (same incident list in every city, points on water): rebuild them.
+        threading.Thread(target=_relayout_in_background, args=(city.id, lock), daemon=True).start()
+        return
     if latest is not None:
         latest = latest if latest.tzinfo else latest.replace(tzinfo=now.tzinfo)
         if now - latest <= timedelta(hours=2):
             return
-    with _guard:
-        lock = _locks.setdefault(city.id, threading.Lock())
     if latest is None:
         with lock:
             if _latest_demo(db, city) is None:
@@ -313,6 +336,30 @@ def ensure_city_data(db: Session, settings: Settings, city: City) -> None:
     if lock.locked():
         return
     threading.Thread(target=_refresh_in_background, args=(city.id, lock), daemon=True).start()
+
+
+def _layout_outdated(db: Session, city: City) -> bool:
+    asset = db.scalars(select(GeoFeature).where(GeoFeature.city_id == city.id, GeoFeature.source_id == DEMO,
+                                                GeoFeature.layer == "asset_bridge").limit(1)).first()
+    return asset is not None and (asset.properties or {}).get("sim_v") != SIM_VERSION
+
+
+def _relayout_in_background(city_id: str, lock: threading.Lock) -> None:
+    from swarmos.db import session_scope
+
+    if not lock.acquire(blocking=False):
+        return
+    try:
+        with session_scope() as db:
+            city = db.get(City, city_id)
+            if city is not None:
+                seed_static(db, city, reset=True)
+                seed_series(db, city)
+        log.info("simulated_city_relayout", extra={"city": city_id, "version": SIM_VERSION})
+    except Exception:  # pragma: no cover - logged, retried on the next check
+        log.exception("simulated_city_relayout_failed", extra={"city": city_id})
+    finally:
+        lock.release()
 
 
 def _queue_real_places(db: Session, settings: Settings, city: City) -> None:
