@@ -81,6 +81,12 @@ class Settings(BaseSettings):
     simulate_all_cities: bool = True
     # Long-running servers build every city's simulated data in the background after startup (no first-visit wait).
     prebuild_cities: bool = True
+    # Stop pre-building once the database reaches this size (MB); other cities are then built on their first visit.
+    # Railway's free volume is 500 MB, so keep room for live data, models and write-ahead log.
+    prebuild_db_budget_mb: int = Field(default=300, ge=50)
+    # PostgreSQL write-ahead-log cap applied at startup when the app's database user may change it (own database
+    # only). Postgres defaults to 1 GB, which can fill a small volume during bulk writes. Empty = leave as is.
+    db_max_wal_size: str | None = "128MB"
     # Train any configured ML model that has no promoted version when the API starts (needs the `ml` extra).
     auto_train_models: bool = True
     demo_pilot_cities: CsvList = Field(default_factory=lambda: ["bengaluru", "mumbai", "delhi"])
