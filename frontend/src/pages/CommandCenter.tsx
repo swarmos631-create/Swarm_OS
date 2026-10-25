@@ -15,7 +15,7 @@ import { useCity } from "../state/city";
 const OpsMap = lazy(() => import("../components/map/OpsMap"));
 
 const ACCENT: Record<string, string> = {
-  environment: "var(--cyan)", mobility: "var(--blue)", energy: "var(--amber)", water: "#38bdf8", safety: "var(--red)", civic: "var(--violet)",
+  environment: "var(--teal)", mobility: "var(--blue)", energy: "var(--amber)", water: "var(--cyan)", safety: "var(--red)", civic: "var(--violet)", weather: "var(--orange)", health: "var(--pink)",
 };
 const TODAY = new Intl.DateTimeFormat("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
@@ -70,10 +70,10 @@ export function CommandCenter() {
 
       {q.error && !d && <ErrorState error={q.error} onRetry={() => void q.refetch()} />}
       {q.error && d && <div className="notice offline"><Icon name="wifiOff" />Showing data from {fmtTime(d.generated_at)} — refresh failed: {(q.error as Error).message}</div>}
-      {city?.is_pilot && (
-        <div className="notice warn" role="note">
-          <Icon name="alert" />
-          <span><b>Demo data present.</b> {city.name} is a pilot city with SYNTHETIC fixtures for traffic, water, energy, incidents and complaints. Values tagged <span className="badge b-demo">Demo</span> are not real-world facts.</span>
+      {city?.has_demo_data && (
+        <div className="notice info" role="note">
+          <Icon name="info" />
+          <span><b>Simulated data in use.</b> Where {city.name} has no live feed, SwarmOS generates readings from climate normals (Kaggle India weather &amp; air-quality data) and city size, so every agent can run. Those values carry a <span className="badge b-demo">Simulated</span> tag; <span className="badge b-live">Live</span> values come from real sources.</span>
         </div>
       )}
 
