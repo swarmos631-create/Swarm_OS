@@ -61,30 +61,65 @@ def sha256_file(path: Path) -> str:
 
 
 class SklearnArtifacts:
-    """Loads the *promoted* version of a trained model, verifying the artifact checksum."""
+    """Loads the *promoted* version of a trained model, verifying the artifact checksum.
+
+    A loaded model stays in memory until a different version is promoted: every `ttl_s` only the promoted
+    version id is re-read (a tiny query), and the artifact is fetched and unpickled again only when it changed.
+    Concurrent callers for the same model wait for one load instead of each loading their own copy.
+    """
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self._cache: dict[str, tuple[float, LoadedModel | None, str | None]] = {}
+        self._models: dict[str, LoadedModel] = {}
+        self._checked: dict[str, tuple[float, str | None, str | None]] = {}  # name -> (when, promoted version, error)
         self._lock = threading.Lock()
+        self._name_locks: dict[str, threading.Lock] = {}
 
-    def load(self, name: str, ttl_s: float = 30.0) -> LoadedModel:
+    def _name_lock(self, name: str) -> threading.Lock:
         with self._lock:
-            cached = self._cache.get(name)
-            if cached and time.monotonic() - cached[0] < ttl_s:
-                if cached[1] is None:
-                    raise ModelUnavailable(cached[2] or f"No promoted model '{name}'")
-                return cached[1]
-        try:
-            model = self._load_uncached(name)
-            err = None
-        except ModelUnavailable as exc:
-            model, err = None, str(exc)
+            return self._name_locks.setdefault(name, threading.Lock())
+
+    def _promoted_version(self, name: str, ttl_s: float) -> str:
         with self._lock:
-            self._cache[name] = (time.monotonic(), model, err)
-        if model is None:
+            checked = self._checked.get(name)
+        if checked and time.monotonic() - checked[0] < ttl_s:
+            version, err = checked[1], checked[2]
+        else:
+            with session_scope() as db:
+                version = db.scalar(select(ModelVersion.version).where(ModelVersion.model_name == name,
+                                                                       ModelVersion.status == "promoted"))
+            err = None if version else f"No promoted version of '{name}'. Train and promote it in the Model Lab."
+            with self._lock:
+                self._checked[name] = (time.monotonic(), version, err)
+        if not version:
             raise ModelUnavailable(err or name)
-        return model
+        return version
+
+    def load(self, name: str, ttl_s: float = 60.0) -> LoadedModel:
+        version = self._promoted_version(name, ttl_s)
+        model = self._models.get(name)
+        if model is not None and model.version == version:
+            return model
+        with self._name_lock(name):
+            model = self._models.get(name)
+            if model is not None and model.version == version:
+                return model  # loaded by another caller while we waited
+            model = self._load_uncached(name)
+            self._models[name] = model
+            return model
+
+    def preload(self) -> list[str]:
+        """Load every promoted model into memory (called once at startup so the first agent run is fast)."""
+        with session_scope() as db:
+            names = list(db.scalars(select(ModelVersion.model_name).where(ModelVersion.status == "promoted")))
+        loaded = []
+        for name in names:
+            try:
+                self.load(name)
+                loaded.append(name)
+            except Exception as exc:  # pragma: no cover - logged; agents fall back to baselines
+                log.warning("model_preload_failed", extra={"model": name, "error_type": type(exc).__name__})
+        return loaded
 
     def _load_uncached(self, name: str) -> LoadedModel:
         with session_scope() as db:
@@ -112,9 +147,11 @@ class SklearnArtifacts:
     def invalidate(self, name: str | None = None) -> None:
         with self._lock:
             if name:
-                self._cache.pop(name, None)
+                self._models.pop(name, None)
+                self._checked.pop(name, None)
             else:
-                self._cache.clear()
+                self._models.clear()
+                self._checked.clear()
 
 
 class LocalLLM:
