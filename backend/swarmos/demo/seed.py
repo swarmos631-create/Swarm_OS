@@ -486,5 +486,7 @@ def bootstrap(db: Session, settings: Settings, *, demo: bool | None = None) -> d
     out["credentials_file"] = str(cred) if cred else None
     out["documents"] = seed_documents(db)
     if (settings.demo_mode if demo is None else demo):
-        out["demo"] = {c: seed_demo_city(db, db.get(City, c)) for c in settings.demo_pilot_cities if db.get(City, c)}  # type: ignore[arg-type]
+        # Only cities without simulated data yet: re-running init on every deploy must not rewrite (and bloat) them.
+        out["demo"] = {c: seed_demo_city(db, city) for c in settings.demo_pilot_cities
+                       if (city := db.get(City, c)) is not None and _latest_demo(db, city) is None}
     return out
