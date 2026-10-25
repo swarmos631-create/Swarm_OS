@@ -33,7 +33,7 @@ export default function MapPage() {
   const hasGL = useMemo(webglAvailable, []);
   const { theme } = useTheme();
   const pal = POINT_COLORS[theme];
-  const [base, setBase] = useBaseMap();
+  const [base, setBase, fallbackTo] = useBaseMap();
   const [mpl, setMpl] = useState<MapLike | null>(null);
 
   const layersQ = useQuery({ queryKey: ["map-layers", cityId], queryFn: () => api<{ layers: Layer[]; note: string }>(`/cities/${cityId}/map/layers`) });
@@ -196,7 +196,7 @@ export default function MapPage() {
         ) : city && (
           <MapplsCanvas center={{ lat: city.lat, lon: city.lon }} zoom={mode3d ? 15.5 : city.zoom} points={points} mode3d={mode3d} theme={theme} onReady={setMpl}
             label={`MapmyIndia map of ${city.name}`} onSelect={(p) => setDetail({ ...p.props, _coords: [p.lon, p.lat] })}
-            onFail={(msg) => { setMapError(`${msg}. Showing the OpenFreeMap 3D map instead.`); setBase("osm"); }} />
+            onFail={(msg) => { setMapError(`${msg}. Showing the OpenFreeMap 3D map instead.`); fallbackTo("osm"); }} />
         )}
         <div className="map-overlay map-layers">
           <div className="field" style={{ marginBottom: 8, position: "relative" }}>
