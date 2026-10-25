@@ -23,8 +23,10 @@ from swarmos.models import City, GeoFeature, Incident
 Mode = Literal["foot", "bike", "car"]
 HELP_LAYERS = ("hospital", "clinic", "police", "fire_station")
 TRANSIT_LAYERS = ("bus_station", "rail_station")
+STREET_LIGHT_LAYERS = ("street_light",)
 CONTEXT_RADIUS_KM = 0.5
 INCIDENT_RADIUS_KM = 0.25
+STREET_LIGHT_RADIUS_KM = 0.1
 MAX_PUBLIC_FEATURE_EVIDENCE = 25
 MAX_ROUTE_CONTEXT_INCIDENTS = 2000
 MAX_ROUTE_CONTEXT_FEATURES = 3000
@@ -72,7 +74,8 @@ def _context(db: Session, city_id: str, geometry: list[list[float]]) -> dict[str
     if not geometry:
         return {"open_incident_points_within_250m": 0, "mapped_help_facilities_within_500m": {},
                 "mapped_transit_stations_within_500m": {}, "facility_features_checked": 0,
-                "transit_features_checked": 0,
+                "transit_features_checked": 0, "street_light_features_checked": 0,
+                "mapped_street_lamp_points_within_100m": 0,
                 "incident_candidates_checked": 0, "incident_candidate_cap": MAX_ROUTE_CONTEXT_INCIDENTS,
                 "incident_candidates_truncated": False,
                 "feature_candidates_checked": 0, "feature_candidate_cap": MAX_ROUTE_CONTEXT_FEATURES,
@@ -92,7 +95,7 @@ def _context(db: Session, city_id: str, geometry: list[list[float]]) -> dict[str
     incident_candidates_truncated = len(incidents) > MAX_ROUTE_CONTEXT_INCIDENTS
     incidents = incidents[:MAX_ROUTE_CONTEXT_INCIDENTS]
     features = db.scalars(select(GeoFeature).where(
-        GeoFeature.city_id == city_id, GeoFeature.layer.in_((*HELP_LAYERS, *TRANSIT_LAYERS)),
+        GeoFeature.city_id == city_id, GeoFeature.layer.in_((*HELP_LAYERS, *TRANSIT_LAYERS, *STREET_LIGHT_LAYERS)),
         GeoFeature.provenance.in_({"live", "cached"}),
         GeoFeature.lat.between(min_lat, max_lat), GeoFeature.lon.between(min_lon, max_lon),
     ).order_by(GeoFeature.id.asc()).limit(MAX_ROUTE_CONTEXT_FEATURES + 1)).all()
@@ -104,13 +107,19 @@ def _context(db: Session, city_id: str, geometry: list[list[float]]) -> dict[str
     near = [row for row, _distance in near_with_distance]
     facilities = Counter(row.layer for row in near if row.layer in HELP_LAYERS)
     transit = Counter(row.layer for row in near if row.layer in TRANSIT_LAYERS)
+    street_lights = sum(
+        1 for row, distance in near_with_distance
+        if row.layer in STREET_LIGHT_LAYERS and distance <= STREET_LIGHT_RADIUS_KM
+    )
+    accessibility_features = [row for row in near if row.layer in (*HELP_LAYERS, *TRANSIT_LAYERS)]
     wheelchair = Counter()
-    for row in near:
+    for row in accessibility_features:
         value = row.properties.get("wheelchair") if isinstance(row.properties, dict) else None
         value = str(value).strip().lower() if value is not None else ""
         wheelchair[value if value in {"yes", "limited", "no", "designated"} else "unknown"] += 1
     public_features = sorted(
-        ((row, distance) for row, distance in near_with_distance if row.layer in (*HELP_LAYERS, *TRANSIT_LAYERS)),
+        ((row, distance) for row, distance in near_with_distance
+         if row.layer in (*HELP_LAYERS, *TRANSIT_LAYERS, *STREET_LIGHT_LAYERS)),
         key=lambda item: (item[1], item[0].layer, item[0].external_id),
     )
     mapped_feature_evidence = []
@@ -132,6 +141,8 @@ def _context(db: Session, city_id: str, geometry: list[list[float]]) -> dict[str
             "mapped_transit_stations_within_500m": dict(sorted(transit.items())),
             "facility_features_checked": sum(1 for row in features if row.layer in HELP_LAYERS),
             "transit_features_checked": sum(1 for row in features if row.layer in TRANSIT_LAYERS),
+            "street_light_features_checked": sum(1 for row in features if row.layer in STREET_LIGHT_LAYERS),
+            "mapped_street_lamp_points_within_100m": street_lights,
             "incident_candidates_checked": len(incidents),
             "incident_candidate_cap": MAX_ROUTE_CONTEXT_INCIDENTS,
             "incident_candidates_truncated": incident_candidates_truncated,
@@ -142,7 +153,7 @@ def _context(db: Session, city_id: str, geometry: list[list[float]]) -> dict[str
             "mapped_wheelchair_accessibility_within_500m": {
                 key: wheelchair[key] for key in ("yes", "limited", "no", "designated", "unknown")
             },
-            "wheelchair_features_near_route": len(near),
+            "wheelchair_features_near_route": len(accessibility_features),
             "mapped_feature_evidence": mapped_feature_evidence,
             "mapped_feature_evidence_truncated": (
                 len(public_features) > MAX_PUBLIC_FEATURE_EVIDENCE or feature_candidates_truncated
@@ -206,7 +217,7 @@ async def compare_routes(db: Session, city_id: str, origin: tuple[float, float],
         "Transit counts include mapped bus and rail stations only; they do not show routes, service frequency, hours, or current operation.",
         "Wheelchair values are community-mapped facility tags near sampled route points; unknown means no recognized tag was present and does not establish accessibility.",
         "The route itself has not been checked for curb ramps, surface, slope, width, crossings, or step-free continuity.",
-        "Street lighting is not measured or verified by this route comparison.",
+        "Mapped street-lamp points are community-mapped OSM infrastructure within 100 m; their count does not verify that lamps work, are switched on, or illuminate the route, and zero does not mean lamps are absent.",
         "This public best-effort routing service has no uptime or data-freshness guarantee and may log submitted coordinates.",
         "No origin, destination, or route history is stored by SwarmOS.",
         "The router estimates distance and time from map data; it does not provide live traffic or transit availability.",

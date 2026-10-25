@@ -222,6 +222,9 @@ def test_sakhi_route_returns_real_route_shape_and_caveats_without_storage(client
         db.add(GeoFeature(city_id="bengaluru", source_id="osm-vector-tiles", layer="bus_station",
                           external_id="test/bus-station-sakhi-route", name="Mapped bus station",
                           lat=12.975, lon=77.595, properties={"wheelchair": "yes"}, provenance="live"))
+        db.add(GeoFeature(city_id="bengaluru", source_id="osm-overpass", layer="street_light",
+                          external_id="node/sakhi-route-lamp", name="Mapped street lamp",
+                          lat=12.975, lon=77.595, properties={"lit": "yes"}, provenance="live"))
         for idx, value in enumerate(("limited", "no", "designated", None)):
             db.add(GeoFeature(city_id="bengaluru", source_id="osm-overpass", layer="clinic",
                               external_id=f"test/wheelchair-{idx}", name="Mapped clinic",
@@ -248,17 +251,19 @@ def test_sakhi_route_returns_real_route_shape_and_caveats_without_storage(client
     assert "open_incident_points_within_250m" in data["routes"][0]["context"]
     assert data["routes"][0]["context"]["mapped_transit_stations_within_500m"] == {"bus_station": 1}
     assert data["routes"][0]["context"]["transit_features_checked"] >= 1
+    assert data["routes"][0]["context"]["street_light_features_checked"] >= 1
+    assert data["routes"][0]["context"]["mapped_street_lamp_points_within_100m"] == 1
     assert data["routes"][0]["context"]["mapped_wheelchair_accessibility_within_500m"] == {
         "yes": 1, "limited": 1, "no": 1, "designated": 1, "unknown": 1,
     }
     assert data["routes"][0]["context"]["wheelchair_features_near_route"] == 5
     evidence = data["routes"][0]["context"]["mapped_feature_evidence"]
-    assert len(evidence) == 5 and not data["routes"][0]["context"]["mapped_feature_evidence_truncated"]
+    assert len(evidence) == 6 and not data["routes"][0]["context"]["mapped_feature_evidence_truncated"]
     assert evidence[0]["external_id"] == "test/bus-station-sakhi-route"
     assert evidence[0]["source_id"] == "osm-vector-tiles" and evidence[0]["wheelchair"] == "yes"
     assert any("transit counts" in item.lower() for item in data["limitations"])
     assert any("wheelchair values" in item.lower() for item in data["limitations"])
-    assert any("lighting" in item.lower() for item in data["limitations"])
+    assert any("street-lamp points" in item.lower() for item in data["limitations"])
     assert "safe" in " ".join(data["limitations"]).lower()
     assert "safety_score" not in data
     assert client.get("/api/v1/public/cities/bengaluru/routes").status_code == 404

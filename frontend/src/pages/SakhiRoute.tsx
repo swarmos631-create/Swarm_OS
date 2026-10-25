@@ -20,6 +20,8 @@ interface RouteOption {
     mapped_transit_stations_within_500m: Record<string, number>;
     facility_features_checked: number;
     transit_features_checked: number;
+    street_light_features_checked?: number;
+    mapped_street_lamp_points_within_100m?: number;
     mapped_wheelchair_accessibility_within_500m?: Record<string, number>;
     wheelchair_features_near_route?: number;
     mapped_feature_evidence?: MappedFeatureEvidence[];
@@ -218,6 +220,7 @@ function RouteCard({ route, index }: { route: RouteOption; index: number }) {
   const facilityCount = Object.values(counts).reduce((sum, count) => sum + count, 0);
   const transitCounts = route.context.mapped_transit_stations_within_500m ?? {};
   const transitCount = Object.values(transitCounts).reduce((sum, count) => sum + count, 0);
+  const streetLampCount = route.context.mapped_street_lamp_points_within_100m ?? 0;
   const wheelchair = route.context.mapped_wheelchair_accessibility_within_500m ?? {};
   const mappedEvidence = route.context.mapped_feature_evidence ?? [];
   return <section className="panel panel-body" style={{ borderTop: "3px solid " + colors[index % colors.length] }}>
@@ -233,6 +236,8 @@ function RouteCard({ route, index }: { route: RouteOption; index: number }) {
       {Object.entries(transitCounts).map(([layer, count]) => <span key={layer} className="xs faint">{layer.replaceAll("_", " ")}: {count}</span>)}
       {!transitCount && <span className="xs faint">No bus or rail stations were found in synced records near the sampled route; coverage may be incomplete.</span>}
       <span className="xs faint">Station counts do not show routes, schedules, accessibility, hours, or whether service is operating.</span>
+      <span className="small">Community-mapped street-lamp points within 100 m: <b>{streetLampCount}</b></span>
+      <span className="xs faint">Mapped poles do not verify working status or how much of the road is illuminated. Zero mapped points does not mean lamps are absent.</span>
       <span className="small">Nearby mapped wheelchair tags: {(["yes", "limited", "no", "designated", "unknown"] as const).map((value) => `${value} ${wheelchair[value] ?? 0}`).join(" · ")}</span>
       <span className="xs faint">Facility tags only; “unknown” means no recognized tag was mapped. This does not assess the route’s surfaces, slopes, curb ramps, crossings, or step-free continuity.</span>
       <details className="small">

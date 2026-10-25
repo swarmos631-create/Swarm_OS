@@ -183,6 +183,7 @@ test("SakhiRoute compares real-route response context and opens mapped evidence"
           mapped_help_facilities_within_500m: { clinic: 1 },
           mapped_transit_stations_within_500m: { bus_station: 1 },
           facility_features_checked: 1, transit_features_checked: 1,
+          street_light_features_checked: 1, mapped_street_lamp_points_within_100m: 2,
           mapped_wheelchair_accessibility_within_500m: { yes: 1, limited: 0, no: 0, designated: 0, unknown: 1 },
           wheelchair_features_near_route: 2,
           mapped_feature_evidence: [{ source_id: "osm-overpass", external_id: "node/123456", name: "Central Clinic",
@@ -192,7 +193,7 @@ test("SakhiRoute compares real-route response context and opens mapped evidence"
           provenance: ["live"],
         },
       }],
-      limitations: ["Mock response for UI test.", "Street lighting is not measured or verified by this route comparison."],
+      limitations: ["Mock response for UI test.", "Mapped street-lamp points are community-mapped OSM infrastructure."],
     } });
   });
   await login(page, "viewer@swarmos.local", "/c/bengaluru/sakhi-route");
@@ -207,9 +208,10 @@ test("SakhiRoute compares real-route response context and opens mapped evidence"
   const routeCard = page.locator("section.panel.panel-body").filter({ hasText: "Router's first choice" });
   await expect(routeCard).toContainText("Nearby mapped wheelchair tags:");
   await expect(routeCard).toContainText("yes 1");
+  await expect(routeCard).toContainText("Community-mapped street-lamp points within 100 m: 2");
   await page.getByText("Inspect mapped facility evidence (1+)").click();
   await expect(page.getByText("Central Clinic")).toBeVisible();
   await expect(page.getByRole("link", { name: "Inspect OpenStreetMap feature ↗" })).toHaveAttribute("href", "https://www.openstreetmap.org/node/123456");
   await expect(routeCard).toContainText("Counts and evidence are incomplete lower bounds.");
-  await expect(page.getByText(/Street lighting is not measured/)).toBeVisible();
+  await expect(page.getByText(/Mapped street-lamp points are community-mapped/)).toBeVisible();
 });
