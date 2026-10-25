@@ -108,7 +108,7 @@ export default function WorkspacePage() {
           {history.error ? <div className="panel-body"><ErrorState error={history.error} /></div> : !history.data ? <div className="panel-body"><LoadingBlock /></div> : (
             <ul className="list">
               {history.data.items.map((t) => (
-                <li key={t.id} style={{ cursor: "pointer", background: t.id === taskId ? "rgba(34,211,238,0.06)" : undefined }} onClick={() => setParams({ task: t.id })}>
+                <li key={t.id} style={{ cursor: "pointer", background: t.id === taskId ? "var(--accent-soft)" : undefined }} onClick={() => setParams({ task: t.id })}>
                   <StatusBadge s={t.status} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="small" style={{ fontWeight: 500 }}>{t.prompt}</div>
