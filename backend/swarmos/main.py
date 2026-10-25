@@ -114,6 +114,26 @@ def tune_database() -> None:
         log.warning("database_tuning_skipped", extra={"error_type": type(exc).__name__, "error": str(exc)[:200]})
 
 
+def _reclaim_space() -> None:
+    """Prune old live readings and vacuum, so the space is reusable before the pre-build writes more."""
+    try:
+        from swarmos.integrations.sync import prune_measurements
+
+        settings = get_settings()
+        removed = prune_measurements(settings.measurement_retention_days)
+        engine = get_engine()
+        if engine.dialect.name == "postgresql":
+            with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+                conn.execute(text("VACUUM (ANALYZE) measurements"))
+                db_mb = conn.execute(text("SELECT pg_database_size(current_database()) / 1048576")).scalar()
+        else:
+            db_mb = None
+        log.info("database_space_reclaimed", extra={"removed": removed, "database_mb": db_mb,
+                                                     "retention_days": settings.measurement_retention_days})
+    except Exception as exc:  # pragma: no cover - best effort
+        log.warning("database_reclaim_skipped", extra={"error_type": type(exc).__name__, "error": str(exc)[:200]})
+
+
 def _prebuild_cities(stop) -> None:  # type: ignore[no-untyped-def]
     """Build every city's simulated data in the background so switching to a new city is instant."""
     import threading
@@ -122,6 +142,7 @@ def _prebuild_cities(stop) -> None:  # type: ignore[no-untyped-def]
         try:
             from swarmos.demo.seed import prebuild_cities
 
+            _reclaim_space()
             time.sleep(20)  # let startup work (model training, first syncs) get going first
             prebuild_cities(get_settings(), stop, pause_s=2.0)
         except Exception as exc:  # pragma: no cover - never break the API
