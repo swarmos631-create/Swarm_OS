@@ -19,11 +19,11 @@ describe("format helpers", () => {
 });
 
 describe("provenance and status badges", () => {
-  it("labels demo data distinctly and explains it", () => {
+  it("labels simulated data distinctly and explains it", () => {
     render(<ProvenanceBadge p="demo" />);
-    const badge = screen.getByText("Demo");
+    const badge = screen.getByText("Simulated");
     expect(badge.closest(".badge")?.className).toContain("b-demo");
-    expect(badge.closest(".badge")?.getAttribute("title")).toMatch(/SYNTHETIC/);
+    expect(badge.closest(".badge")?.getAttribute("title")).toMatch(/not a live reading/);
   });
   it("treats synthetic like demo", () => {
     render(<ProvenanceBadge p="synthetic" />);
