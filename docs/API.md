@@ -34,7 +34,7 @@ Snapshots retain the generated timestamp and reporting-window note, indicators, 
 * GET /cities/{city_id}/actions/{action_id}/outcome
   * Any authenticated user with city access; cross-city action IDs return 404.
 
-These are operator-reported follow-up outcomes. Linked measurements add time-stamped context only; this workflow does not prove causality or calculate intervention effectiveness.
+Outcome responses include the linked observation source, entity and timestamps. For executed actions with a recorded `executed_at`, `observed_changes` pairs the nearest linked measurements before and after execution, matching metric, unit, entity and source. Each pair includes the two measurement IDs, values, timestamps, absolute change and relative change when the before value is nonzero. The response also includes `comparison_boundary`, `change_comparison_status` and a plain-language `comparison_method`. Manual actions or executed actions without a timestamp do not get a before/after comparison. These operator-reported associations and descriptive changes do not prove causality or estimate intervention effectiveness.
 
 ## Forecast evaluation
 
@@ -103,7 +103,7 @@ Rate limits use atomic fixed-window PostgreSQL counters shared across API replic
 * POST /public/cities/{city_id}/routes/compare
   * No login; rate-limited to 3 requests/minute per hashed client key through the shared database, plus a best-effort one-request/second FOSSGIS limit per API process.
   * Body: {"origin":{"lat":12.97,"lon":77.59},"destination":{"lat":12.98,"lon":77.60},"mode":"foot|bike|car"}.
-  * Both endpoints must be within 150 km of the selected city centre. Returns up to three real OSRM LineString route alternatives, estimated distance/time, nearby mapped incident/help-facility/transit-station counts, up to 25 nearest feature evidence references (source and external IDs, provenance, and timestamps), nearby mapped facility/station `wheelchair=*` counts (`yes`, `limited`, `no`, `designated`, `unknown`), attribution and caveats. Incident details remain aggregate-only. Wheelchair tags describe mapped features and do not validate route accessibility.
+  * Both endpoints must be within 150 km of the selected city centre. Returns up to three real OSRM LineString route alternatives, estimated distance/time, nearby mapped incident/help-facility/transit-station counts, up to 25 nearest feature evidence references (source and external IDs, provenance, and timestamps), nearby mapped facility/station `wheelchair=*` counts (`yes`, `limited`, `no`, `designated`, `unknown`), attribution and caveats. Context includes candidate checked/cap/truncated fields; if `context_truncated` is true, counts and evidence are incomplete lower bounds. Feature evidence is also marked truncated when its 25-record display cap is reached. Incident details remain aggregate-only. Wheelchair tags describe mapped features and do not validate route accessibility.
   * Coordinates are not persisted by SwarmOS. The routing provider may log coordinates. Do not send coordinates without the user's explicit action and disclosure.
 
 The frontend draws returned alternatives as colored Mappls polylines when the optional map key is configured, or as MapLibre polylines over the keyless OpenFreeMap fallback; a schematic preview is used only if interactive maps fail. No route endpoint produces a safety score. Transit counts do not identify active services or schedules. A missing feature or zero incident count is not evidence of safety or absence.

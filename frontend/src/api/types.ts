@@ -245,7 +245,16 @@ export interface InterventionOutcome {
   measurement_ids: number[];
   recorded_at: string;
   updated_at: string;
-  evidence: { id: number; metric: string; value: number; unit: string; kind: string; provenance: string; observed_at: string; fetched_at: string }[];
+  evidence: { id: number; metric: string; entity: string; source_id: string; value: number; unit: string; kind: string; provenance: string; observed_at: string; fetched_at: string }[];
+  comparison_boundary: string | null;
+  change_comparison_status: "paired_measurements_found" | "no_matched_measurements" | "no_recorded_execution_time";
+  observed_changes: {
+    metric: string; unit: string; entity: string; source_id: string;
+    before: { measurement_id: number; value: number; observed_at: string };
+    after: { measurement_id: number; value: number; observed_at: string };
+    absolute_change: number; relative_change_pct: number | null;
+  }[];
+  comparison_method: string;
   interpretation: string;
 }
 

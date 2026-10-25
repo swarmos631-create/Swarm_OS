@@ -426,6 +426,64 @@ def test_task_plan_submit_execute_idempotency_and_actions(operator):
     assert twice.status_code == 409
 
 
+def test_intervention_outcome_pairs_only_comparable_observations(operator):
+    from datetime import timedelta
+
+    from swarmos.db import session_scope, utcnow
+    from swarmos.models import Measurement, ProposedAction
+
+    boundary = utcnow()
+    with session_scope() as db:
+        action = ProposedAction(city_id="bengaluru", agent_id="mobility_optimization_agent", kind="manual",
+                                title="Review corridor signal plan", status="executed", executed_at=boundary)
+        db.add(action)
+        db.flush()
+        action_id = action.id
+        measurements = [
+            Measurement(city_id="bengaluru", source_id="open-meteo-weather", category="mobility",
+                        metric="learning_test_flow", entity="corridor-a", value=18, unit="vehicles/min",
+                        kind="observation", observed_at=boundary - timedelta(hours=2), provenance="live", meta={}),
+            Measurement(city_id="bengaluru", source_id="open-meteo-weather", category="mobility",
+                        metric="learning_test_flow", entity="corridor-a", value=20, unit="vehicles/min",
+                        kind="observation", observed_at=boundary - timedelta(hours=1), provenance="live", meta={}),
+            Measurement(city_id="bengaluru", source_id="open-meteo-weather", category="mobility",
+                        metric="learning_test_flow", entity="corridor-a", value=22, unit="vehicles/min",
+                        kind="observation", observed_at=boundary + timedelta(hours=1), provenance="live", meta={}),
+            Measurement(city_id="bengaluru", source_id="open-meteo-weather", category="mobility",
+                        metric="learning_test_flow", entity="corridor-a", value=24, unit="vehicles/min",
+                        kind="observation", observed_at=boundary + timedelta(hours=2), provenance="live", meta={}),
+            Measurement(city_id="bengaluru", source_id="osm-overpass", category="mobility",
+                        metric="learning_test_flow", entity="corridor-a", value=900, unit="vehicles/min",
+                        kind="observation", observed_at=boundary + timedelta(hours=1), provenance="live", meta={}),
+            Measurement(city_id="bengaluru", source_id="open-meteo-weather", category="mobility",
+                        metric="learning_test_flow", entity="corridor-b", value=80, unit="vehicles/min",
+                        kind="observation", observed_at=boundary - timedelta(hours=1), provenance="live", meta={}),
+            Measurement(city_id="bengaluru", source_id="open-meteo-weather", category="mobility",
+                        metric="learning_test_flow", entity="corridor-b", value=90, unit="vehicles/min",
+                        kind="observation", observed_at=boundary + timedelta(hours=1), provenance="live", meta={}),
+        ]
+        db.add_all(measurements)
+        db.flush()
+        measurement_ids = [measurement.id for measurement in measurements]
+
+    response = operator.put(f"/api/v1/cities/bengaluru/actions/{action_id}/outcome", json={
+        "outcome": "unverified", "note": "Review observations after the signal plan change.",
+        "measurement_ids": measurement_ids,
+    })
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["change_comparison_status"] == "paired_measurements_found"
+    assert len(data["observed_changes"]) == 2
+    assert {change["entity"] for change in data["observed_changes"]} == {"corridor-a", "corridor-b"}
+    assert all(change["source_id"] == "open-meteo-weather" for change in data["observed_changes"])
+    change = next(change for change in data["observed_changes"] if change["entity"] == "corridor-a")
+    assert change["before"]["measurement_id"] == measurement_ids[1]
+    assert change["after"]["measurement_id"] == measurement_ids[2]
+    assert change["absolute_change"] == 2 and change["relative_change_pct"] == 10
+    assert next(change for change in data["observed_changes"] if change["entity"] == "corridor-b")["absolute_change"] == 10
+    assert "does not estimate causal impact" in data["comparison_method"]
+
+
 def test_action_evidence_resolves_redacted_city_scoped_service_request(operator):
     from swarmos.db import session_scope
     from swarmos.models import ProposedAction, ServiceRequest

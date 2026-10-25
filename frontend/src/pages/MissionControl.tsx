@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import type { Execution, InterventionOutcome, Page, ProposedAction, TaskDetail, TaskSummary } from "../api/types";
 import { Dialog, EmptyState, ErrorState, LoadingBlock, Panel, ProvenanceBadge, StatusBadge } from "../components/ui";
-import { ago, duration, fmtTime, titleCase } from "../lib/format";
+import { ago, duration, fmtNum, fmtTime, titleCase } from "../lib/format";
 import { Icon } from "../lib/icons";
 import { useCity } from "../state/city";
 import { useSession } from "../state/session";
@@ -297,7 +297,21 @@ function OutcomeEditor({ cityId, taskId, actionId, outcome }: { cityId: string; 
     <b className="small">Observed outcome</b>
     {outcome && <div className="stack"><div className="row wrap"><StatusBadge s={outcome.outcome} /><span className="xs faint">Recorded {fmtTime(outcome.recorded_at)}</span></div>
       <span className="small muted">{outcome.note}</span>
-      {outcome.evidence.length > 0 && <div className="small">Observed measurements: {outcome.evidence.map((item) => `${item.metric} ${item.value} ${item.unit} (${item.provenance}, ${fmtTime(item.observed_at)})`).join(" · ")}</div>}
+      {outcome.evidence.length > 0 && <div className="small">Linked observations: {outcome.evidence.map((item) => `${item.metric} · ${item.entity} ${item.value} ${item.unit} (${item.source_id}, ${item.provenance}, ${fmtTime(item.observed_at)})`).join(" · ")}</div>}
+      {!!outcome.observed_changes.length && <div className="stack">
+        <span className="small"><b>Descriptive before/after changes</b> · paired around {outcome.comparison_boundary ? fmtTime(outcome.comparison_boundary) : "recorded execution"}</span>
+        <ul className="small muted" style={{ margin: 0, paddingLeft: 18 }}>
+          {outcome.observed_changes.map((change) => <li key={`${change.metric}/${change.entity}/${change.source_id}`}>
+            {change.metric} · {change.entity} · {change.source_id}: {fmtNum(change.before.value)} {change.unit} → {fmtNum(change.after.value)} {change.unit} ({change.absolute_change >= 0 ? "+" : ""}{fmtNum(change.absolute_change)} {change.unit}{change.relative_change_pct == null ? "" : `, ${change.relative_change_pct >= 0 ? "+" : ""}${fmtNum(change.relative_change_pct)}%`})
+          </li>)}
+        </ul>
+        <span className="xs faint">{outcome.comparison_method}</span>
+      </div>}
+      {outcome.evidence.length > 0 && !outcome.observed_changes.length && <span className="xs faint">
+        {outcome.change_comparison_status === "no_recorded_execution_time"
+          ? "No before/after comparison: the action has no recorded execution timestamp."
+          : "No matched observations on both sides of execution for the same metric, unit, entity and source."}
+      </span>}
       <span className="xs faint">{outcome.interpretation}</span>
     </div>}
     <div className="row wrap">
