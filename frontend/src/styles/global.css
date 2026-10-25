@@ -471,7 +471,6 @@ pre.json { background: var(--surface-2); border: 1px solid var(--line); border-r
 .ops-map-foot { position: absolute; z-index: 4; left: 16px; right: 16px; bottom: 10px; display: flex; justify-content: space-between; pointer-events: none; }
 .ops-map-foot span { background: var(--glass); padding: 2px 10px; border-radius: 999px; }
 .ops-map .maplibregl-ctrl-bottom-left, .ops-map .maplibregl-ctrl-bottom-right { bottom: 26px; }
-.map-source { position: absolute; z-index: 5; left: 50%; transform: translateX(-50%); top: 14px; }
 
 .compass {
   position: absolute; z-index: 5; top: 16px; right: 16px; width: 116px; height: 116px; padding: 0; border: 0; border-radius: 50%;
@@ -583,9 +582,6 @@ pre.json { background: var(--surface-2); border: 1px solid var(--line); border-r
 /* ---------- MapmyIndia markers + base-map switch ---------- */
 .mpl-dot { border-radius: 50%; cursor: pointer; transition: transform 0.15s; }
 .mpl-dot:hover { transform: scale(1.35); }
-.base-switch { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--glass); border: 1px solid var(--line-strong); backdrop-filter: blur(8px); }
-.base-switch button { height: 28px; padding: 0 12px; border-radius: 999px; border: 0; background: transparent; color: var(--text-2); font: 600 11.5px var(--font-ui); cursor: pointer; }
-.base-switch button[aria-pressed="true"] { background: var(--grad-brand); color: var(--on-accent); }
 /* MapmyIndia offers only a day style on this plan: tint its canvas for dark mode (markers are DOM, so keep their colours). */
 :root[data-theme="dark"] .mappls-canvas-host canvas { filter: invert(0.9) hue-rotate(180deg) saturate(0.7) brightness(0.95) contrast(0.92); }
 
