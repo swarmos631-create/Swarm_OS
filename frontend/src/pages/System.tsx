@@ -44,7 +44,7 @@ function StatusTab() {
     <>
       <div className="grid cols-4">
         <Panel title="Readiness">{health.data ? <div className="stack"><StatusBadge s={health.data.status === "ready" ? "healthy" : "failed"} label={health.data.status} />{Object.entries(health.data.checks).map(([k, v]) => <div key={k} className="row between small"><span className="muted">{k}</span><span>{v}</span></div>)}<span className="xs faint">v{health.data.version}</span></div> : <LoadingBlock />}</Panel>
-        <Panel title="Environment"><dl className="kv" style={{ gridTemplateColumns: "100px 1fr" }}><dt>Mode</dt><dd>{s.environment}</dd><dt>Database</dt><dd>{s.database}</dd><dt>Demo</dt><dd>{s.demo_mode ? "enabled" : "disabled"}</dd><dt>Worker</dt><dd>{s.worker.embedded ? "embedded" : "external"}</dd></dl></Panel>
+        <Panel title="Environment"><dl className="kv" style={{ gridTemplateColumns: "100px 1fr" }}><dt>Mode</dt><dd>{s.environment}</dd><dt>Database</dt><dd>{s.database}</dd><dt>Simulation</dt><dd>{s.demo_mode ? "enabled" : "disabled"}</dd><dt>Worker</dt><dd>{s.worker.embedded ? "embedded" : "external"}</dd></dl></Panel>
         <Panel title="Job queue"><div className="row wrap">{Object.entries(s.worker.job_counts).map(([k, v]) => <StatusBadge key={k} s={k} label={`${v} ${k}`} />)}</div></Panel>
         <Panel title="Limits & sync"><dl className="kv" style={{ gridTemplateColumns: "150px 1fr" }}>{Object.entries(s.limits).map(([k, v]) => <><dt key={k}>{k.replace(/_/g, " ")}</dt><dd className="num">{v}</dd></>)}<dt>auto-sync</dt><dd>{s.sync.enabled ? `every ${s.sync.interval_minutes} min: ${s.sync.cities.join(", ")}` : "off"}</dd></dl></Panel>
       </div>
