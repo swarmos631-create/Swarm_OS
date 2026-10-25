@@ -29,13 +29,24 @@ from swarmos.models import AgentExecution, AgentTask, Incident, SyncRun
 def policy_documents(ctx: AgentContext) -> AgentResult:
     query = getattr(ctx.params, "text", None) or ctx.prompt
     hits = search(ctx.data.db, query, city_id=ctx.city.id, clearance=ctx.clearance, k=5)
+    seasonal = False
+    if not hits:
+        # Nothing matched the request itself: return the guidance that matters for the current season instead.
+        month = ctx.now.month
+        topic = ("heavy rainfall urban flooding drains waterlogging" if 6 <= month <= 9
+                 else "heat wave cooling drinking water" if 3 <= month <= 5
+                 else "air quality AQI PM2.5 graded response")
+        hits = search(ctx.data.db, topic, city_id=ctx.city.id, clearance=ctx.clearance, k=3)
+        seasonal = bool(hits)
+        query = topic if hits else query
     if not hits:
         return AgentResult(status="degraded", summary="No authorised documents matched this request.", confidence=0.2,
                            method="retrieval:bm25", missing=["relevant policy / SOP documents in the knowledge base"],
                            metrics={"passages": [], "query": query[:200]}, provenance=["operator"])
     passages = [h.as_dict() for h in hits]
     synthetic = any(h.document.is_synthetic for h in hits)
-    return ok(f"{len(passages)} relevant passage(s) retrieved from {len({h.document.id for h in hits})} document(s).",
+    lead = "No passage matched the request; seasonal guidance instead: " if seasonal else ""
+    return ok(f"{lead}{len(passages)} relevant passage(s) retrieved from {len({h.document.id for h in hits})} document(s).",
               confidence=0.6, method="retrieval:bm25", metrics={"passages": passages, "query": query[:200]},
               provenance={"synthetic"} if synthetic else {"operator"},
               extra_refs=[{"type": "document", "document_id": h.document.id, "title": h.document.title,
@@ -212,7 +223,7 @@ def cross_correlation(ctx: AgentContext) -> AgentResult:
         if r is not None:
             used += [a, b]
             results.append({"x": m1, "y": m2, "pearson_r": round(r, 3), "n": len(xs)})
-    traffic = ctx.data.entities("traffic", hours_back=72)
+    traffic = ctx.data.entities("traffic", hours_back=72, live_first=False)
     if traffic:
         sp = ctx.data.one_series("speed_kmph", entity=traffic[0], hours_back=72)
         pr = ctx.data.one_series("precipitation", hours_back=72, category="weather")
