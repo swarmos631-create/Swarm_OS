@@ -57,7 +57,8 @@ def test_dashboard_marks_unavailable_and_demo(admin):
     d = admin.get("/api/v1/cities/bengaluru/dashboard").json()
     by_id = {i["id"]: i for i in d["indicators"]}
     assert by_id["power_demand"]["provenance"] == "demo"
-    assert by_id["temperature"]["status"] == "unavailable"  # no live sync in tests
+    # No live sync in tests: weather comes from the climate-calibrated simulation and is labelled as such.
+    assert by_id["temperature"]["status"] == "available" and by_id["temperature"]["provenance"] == "demo"
     other = admin.get("/api/v1/cities/jaipur/dashboard").json()
     assert {i["id"]: i for i in other["indicators"]}["power_demand"]["status"] == "unavailable"
     assert other["incidents"]["open"] == 0
