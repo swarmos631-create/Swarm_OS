@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
@@ -142,6 +142,11 @@ def persist_payload(db: Session, source_id: str, city: City | None, payload: Syn
     else:
         _upsert(db, GeoFeature, frows, ["source_id", "external_id", "city_id"],
                 ["name", "lat", "lon", "properties", "provenance", "observed_at", "fetched_at", "layer"])
+        if provenance != "demo" and frows:
+            # Real facilities replace the simulated placeholders for the same layer.
+            layers = sorted({str(r["layer"]) for r in frows})
+            db.execute(delete(GeoFeature).where(GeoFeature.city_id == city.id, GeoFeature.provenance == "demo",
+                                                GeoFeature.layer.in_(layers)))
     return len(mrows) + len(frows)
 
 
@@ -255,7 +260,8 @@ def city_source_status(db: Session, city_id: str) -> list[dict[str, Any]]:
         applies = True
         if src.id == "swarmos-demo":
             city = db.get(City, city_id)
-            applies = bool(city and city.is_pilot and src.enabled)
+            settings = get_settings()
+            applies = bool(city and src.enabled and settings.demo_mode and (city.is_pilot or settings.simulate_all_cities))
         out.append(
             {
                 "id": src.id,
