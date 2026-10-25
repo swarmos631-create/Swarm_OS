@@ -83,7 +83,7 @@ export function LineChart({ series, height = 220, unit, label, yZero = false }: 
         }}>
         {ticks.map((t) => (
           <g key={t}>
-            <line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke="rgba(120,160,220,0.1)" />
+            <line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke="var(--grid-line)" />
             <text x={L - 6} y={y(t) + 3} textAnchor="end" fontSize="10" fill="var(--text-3)" fontFamily="var(--font-mono)">{fmtNum(t)}</text>
           </g>
         ))}
@@ -97,7 +97,7 @@ export function LineChart({ series, height = 220, unit, label, yZero = false }: 
             d={s.points.map((p, i) => `${i ? "L" : "M"}${x(new Date(p[0]).getTime()).toFixed(1)},${y(p[1]).toFixed(1)}`).join("")} />
         ))}
         {hover != null && base[hover] && (
-          <line x1={x(new Date(base[hover][0]).getTime())} x2={x(new Date(base[hover][0]).getTime())} y1={T} y2={H - B} stroke="rgba(230,237,247,0.3)" />
+          <line x1={x(new Date(base[hover][0]).getTime())} x2={x(new Date(base[hover][0]).getTime())} y1={T} y2={H - B} stroke="var(--line-strong)" />
         )}
       </svg>
       {hover != null && base[hover] && (
@@ -129,7 +129,7 @@ export function StackedBars({ data, keys, colors, height = 180, label }: { data:
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} role="img" aria-label={label}>
         {[0, max / 2, max].map((t) => (
           <g key={t}>
-            <line x1={L} x2={W} y1={y(t)} y2={y(t)} stroke="rgba(120,160,220,0.1)" />
+            <line x1={L} x2={W} y1={y(t)} y2={y(t)} stroke="var(--grid-line)" />
             <text x={L - 4} y={y(t) + 3} textAnchor="end" fontSize="10" fill="var(--text-3)">{Math.round(t)}</text>
           </g>
         ))}
