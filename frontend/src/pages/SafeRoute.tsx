@@ -57,7 +57,7 @@ type RoutePreference = "balanced" | "fastest" | "mapped_context" | "transit_whee
 
 const colors = ["var(--cyan)", "var(--orange)", "var(--violet)"];
 
-export default function SakhiRoutePage() {
+export default function SafeRoutePage() {
   const { cityId, city } = useCity();
   const [origin, setOrigin] = useState<Endpoint>({ lat: "", lon: "" });
   const [destination, setDestination] = useState<Endpoint>({ lat: "", lon: "" });
@@ -84,7 +84,7 @@ export default function SakhiRoutePage() {
 
   return <>
     <div className="page-head">
-      <div><h1>SakhiRoute — {city?.name}</h1><p>Compare real walking, cycling or driving paths with mapped incident and public-help context.</p></div>
+      <div><h1>SafeRoute — {city?.name}</h1><p>Compare real walking, cycling or driving paths with mapped incident and public-help context.</p></div>
     </div>
     <div className="notice info" style={{ marginBottom: 14 }}>
       Routes are not safety guarantees. Map tiles come from the configured Mappls provider or the keyless OpenFreeMap/OpenStreetMap fallback; tile requests expose the viewed area to that provider. When enabled, address search text is sent to Mappls for place suggestions. When you request a route, start and destination coordinates are sent to the FOSSGIS routing service, which may retain request logs. SwarmOS does not store route history.
@@ -148,7 +148,7 @@ export default function SakhiRoutePage() {
 }
 
 function EndpointFields({ label, value, cityLat, cityLon, onChange }: { label: string; value: Endpoint; cityLat?: number; cityLon?: number; onChange: (value: Endpoint) => void }) {
-  const inputId = `sakhi-search-${label.toLowerCase()}`;
+  const inputId = `saferoute-search-${label.toLowerCase()}`;
   const inputRef = useRef<HTMLInputElement>(null);
   const [searchError, setSearchError] = useState("");
   const [searchReady, setSearchReady] = useState(false);
