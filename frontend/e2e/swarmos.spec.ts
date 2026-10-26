@@ -228,7 +228,7 @@ test("PWA manifest, icons and service worker", async ({ page, request }) => {
   expect(apiCache.headers()["cache-control"]).toBe("no-store");
 });
 
-test("SakhiRoute compares real-route response context and opens mapped evidence", async ({ page }) => {
+test("SafeRoute compares real-route response context and opens mapped evidence", async ({ page }) => {
   await page.route("**/api/v1/public/cities/bengaluru/routes/compare", async (route) => {
     const context = {
       open_incident_points_within_250m: 1,
@@ -264,7 +264,7 @@ test("SakhiRoute compares real-route response context and opens mapped evidence"
       limitations: ["Mock response for UI test.", "Mapped street-lamp points are community-mapped OSM infrastructure."],
     } });
   });
-  await login(page, "viewer@swarmos.local", "/c/bengaluru/sakhi-route");
+  await login(page, "viewer@swarmos.local", "/c/bengaluru/safe-route");
   const start = page.getByRole("group", { name: "Start" });
   const destination = page.getByRole("group", { name: "Destination" });
   await start.getByLabel("Latitude").fill("12.97");
