@@ -21,7 +21,7 @@ const ModelLabPage = lazy(() => import("./pages/ModelLab"));
 const SystemPage = lazy(() => import("./pages/System"));
 const SettingsPage = lazy(() => import("./pages/Settings"));
 const CitizenReportPage = lazy(() => import("./pages/CitizenReport"));
-const SakhiRoutePage = lazy(() => import("./pages/SakhiRoute"));
+const SafeRoutePage = lazy(() => import("./pages/SafeRoute"));
 const ReportsPage = lazy(() => import("./pages/Reports"));
 
 function DefaultCity() {
@@ -76,7 +76,8 @@ export function App() {
         <Route path="agents" element={page(<AgentsPage />)} />
         <Route path="mission-control" element={page(<MissionControlPage />)} />
         <Route path="scenarios" element={page(<ScenarioLabPage />)} />
-        <Route path="sakhi-route" element={page(<SakhiRoutePage />)} />
+        <Route path="safe-route" element={page(<SafeRoutePage />)} />
+        <Route path="sakhi-route" element={<Navigate to="../safe-route" replace />} />
         <Route path="reports" element={page(<ReportsPage />)} />
         <Route path="analytics" element={page(<AnalyticsPage />)} />
         <Route path="integrations" element={page(<IntegrationsPage />)} />
