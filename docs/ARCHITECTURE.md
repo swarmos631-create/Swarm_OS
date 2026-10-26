@@ -113,4 +113,4 @@ Interactive OpenAPI docs are at `/api/docs` (disabled in production). Main resou
 `agents`, `integrations`, `models/*`, `notifications`, `system/status|audit|users`. Health: `/api/health/live`, `/api/health/ready`.
 List endpoints share `limit`/`offset` pagination and return `{items, total, limit, offset}`.
 
-Public routes are limited to text-only citizen requests, private-reference status lookup, and a user-initiated SakhiRoute request. Citizen lookup returns no report text or internal notes. Route coordinates are not stored by SwarmOS but are sent to the public routing provider, which may log them. See [API.md](API.md) and [SAKHIROUTE.md](SAKHIROUTE.md).
+Public routes are limited to text-only citizen requests, private-reference status lookup, and a user-initiated SafeRoute request. Citizen lookup returns no report text or internal notes. Route coordinates are not stored by SwarmOS but are sent to the public routing provider, which may log them. See [API.md](API.md) and [SAFEROUTE.md](SAFEROUTE.md).
