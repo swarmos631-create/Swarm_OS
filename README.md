@@ -20,7 +20,7 @@ ML pipeline, all delivered as an installable progressive web app (PWA).
 | Scenario Lab | Saved rainfall/heat stress runs using the existing deterministic scenario agent and durable task queue |
 | Incident evidence | Operator-managed, audited links from incidents to measurements, agent findings, citizen reports, mapped features and recommendations |
 | Citizen reporting | Public text-only report intake, private reference status lookup and operator-owned triage |
-| SakhiRoute | Best-effort OpenStreetMap route alternatives with mapped incident/help context; no safety score or saved travel history |
+| SafeRoute | Best-effort OpenStreetMap route alternatives with mapped incident/help context; no safety score or saved travel history |
 | Local AI | scikit-learn models trained in-repo; optional Ollama / llama.cpp on loopback; deterministic fallbacks; **no hosted LLM APIs** |
 | Model Lab | Reproducible training on synthetic datasets, evaluation gates vs baselines, registry, promote and rollback |
 | Integrations | Open-Meteo weather and air quality, USGS earthquakes, OpenStreetMap/Overpass (live, no key); CPCB via data.gov.in (key needed); IMD (access by arrangement) |
@@ -83,7 +83,7 @@ and health have not been verified from this checkout. See [docs/DEPLOYMENT.md](d
 * [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): modules, data model, orchestration, API, SQLite vs PostgreSQL
 * [docs/API.md](docs/API.md): request/response contracts and access controls for the new workflows
 * [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md): live providers, free-tier credentials and data limitations
-* [docs/SAKHIROUTE.md](docs/SAKHIROUTE.md): routing provider, privacy and safety limitations
+* [docs/SAFEROUTE.md](docs/SAFEROUTE.md): routing provider, privacy and safety limitations
 * [docs/AGENTS.md](docs/AGENTS.md): the 50 agents, contracts, and how to add one
 * [docs/ML.md](docs/ML.md): datasets, training, evaluation, registry, local LLM setup
 * [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md): data sources, credentials, adding an adapter
