@@ -213,17 +213,17 @@ def test_public_citizen_intake_returns_private_reference_and_operator_triage(ope
     assert operator.get(status_url).json()["status"] == "resolved"
 
 
-def test_sakhi_route_returns_real_route_shape_and_caveats_without_storage(client, monkeypatch):
+def test_safe_route_returns_real_route_shape_and_caveats_without_storage(client, monkeypatch):
     from swarmos.db import session_scope
     from swarmos.models import GeoFeature, Incident
     from swarmos.services import routing
 
     with session_scope() as db:
         db.add(GeoFeature(city_id="bengaluru", source_id="osm-vector-tiles", layer="bus_station",
-                          external_id="test/bus-station-sakhi-route", name="Mapped bus station",
+                          external_id="test/bus-station-safe-route", name="Mapped bus station",
                           lat=12.975, lon=77.595, properties={"wheelchair": "yes"}, provenance="live"))
         db.add(GeoFeature(city_id="bengaluru", source_id="osm-overpass", layer="street_light",
-                          external_id="node/sakhi-route-lamp", name="Mapped street lamp",
+                          external_id="node/safe-route-lamp", name="Mapped street lamp",
                           lat=12.975, lon=77.595, properties={"lit": "yes"}, provenance="live"))
         for provenance, source in (("live", "incident-feed"), ("public", "citizen-portal"), ("demo", "swarmos-demo")):
             db.add(Incident(city_id="bengaluru", title=f"{provenance} route context", category="streetlight",
@@ -270,7 +270,7 @@ def test_sakhi_route_returns_real_route_shape_and_caveats_without_storage(client
     assert data["routes"][0]["context"]["wheelchair_features_near_route"] == 5
     evidence = data["routes"][0]["context"]["mapped_feature_evidence"]
     assert len(evidence) == 6 and not data["routes"][0]["context"]["mapped_feature_evidence_truncated"]
-    assert evidence[0]["external_id"] == "test/bus-station-sakhi-route"
+    assert evidence[0]["external_id"] == "test/bus-station-safe-route"
     assert evidence[0]["source_id"] == "osm-vector-tiles" and evidence[0]["wheelchair"] == "yes"
     lamp_evidence = next(item for item in evidence if item["layer"] == "street_light")
     assert lamp_evidence["lighting_tag"] == "yes" and lamp_evidence["lamp_type"] is None
