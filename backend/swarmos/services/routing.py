@@ -188,7 +188,7 @@ async def compare_routes(db: Session, city_id: str, origin: tuple[float, float],
         if not (-90 <= lat <= 90 and -180 <= lon <= 180) or haversine_km(city.lat, city.lon, lat, lon) > 150:
             raise ApiError(422, "outside_city_scope", "Route endpoints must be within 150 km of the selected city")
     # FOSSGIS asks clients to stay at or below one request per second; this process-wide guard is best effort.
-    limiter.check("sakhi-route:fossgis-upstream", 1, window_s=1)
+    limiter.check("safe-route:fossgis-upstream", 1, window_s=1)
     profile = "bike" if mode == "bike" else mode
     # FOSSGIS chooses the profile from the routed-{profile} prefix; its OSRM path segment stays "driving".
     path_profile = "driving"
