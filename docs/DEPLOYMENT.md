@@ -27,7 +27,7 @@ ephemeral container filesystem is not a durable production database.
 4. The container runs `swarmos migrate` before serving. Wait for `/api/health/ready`, then initialize the first
    admin through `POST /api/internal/bootstrap` with `Authorization: Bearer $SWARMOS_CRON_SECRET` and the admin
    credentials in the JSON body. Never put the password in Git or public deployment logs.
-5. Verify sign-in, data integrations, scenario jobs, incident evidence, citizen intake, reports, and SakhiRoute on
+5. Verify sign-in, data integrations, scenario jobs, incident evidence, citizen intake, reports, and SafeRoute on
    the Railway domain. Keep PostgreSQL private to the project.
 
 The embedded worker suits a single app instance. With multiple API replicas, set
