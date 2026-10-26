@@ -17,7 +17,7 @@ This plan reflects the repository state inspected on 2026-10-25. The full featur
 - Saved rainfall/temperature scenario runs backed by existing agent jobs and parameters.
 - Deterministic same-task disagreement review using exact shared metrics and matching finding titles; no confidence voting.
 - Anonymous text-only citizen intake, opaque reference status lookup, local classification, and operator status triage.
-- SakhiRoute using best-effort FOSSGIS/OSRM route alternatives and local mapped context, with no safety rating or SwarmOS route-history storage.
+- SafeRoute using best-effort FOSSGIS/OSRM route alternatives and local mapped context, with no safety rating or SwarmOS route-history storage.
 - Persisted situation reports with a bounded city snapshot, agent review, scenario comparisons, recommendations, outcome summaries, city-scoped history and Markdown/print export.
 - Audited operator outcome records for executed/manual actions, with optional links to non-demo observed measurements and explicit causal limitations.
 - City Analytics now includes historical forecast evaluation and exact-match cross-task signal review with source provenance and caveats.
