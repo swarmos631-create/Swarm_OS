@@ -103,7 +103,7 @@ GET /cities/{city_id}/tasks/{task_id} includes a consensus object. It compares o
 
 Rate limits use atomic fixed-window PostgreSQL counters shared across API replicas. Caller keys are hashed before persistence, so raw IP addresses are not stored in the limiter table. Fixed windows can allow a short burst across a window boundary; use an edge/Redis sliding-window limiter if stricter burst control is required.
 
-## SakhiRoute route alternatives
+## SafeRoute route alternatives
 
 * POST /public/cities/{city_id}/routes/compare
   * No login; rate-limited to 3 requests/minute per hashed client key through the shared database, plus a best-effort one-request/second FOSSGIS limit per API process.
