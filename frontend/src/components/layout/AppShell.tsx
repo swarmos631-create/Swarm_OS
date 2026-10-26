@@ -21,7 +21,7 @@ const NAV: { to: string; label: string; icon: IconName; color: string; section?:
   { to: "agents", label: "Agent Fleet", color: "var(--orange)", icon: "agents" },
   { to: "mission-control", label: "Mission Control", color: "var(--pink)", icon: "grid" },
   { to: "scenarios", label: "Scenario Lab", color: "var(--amber)", icon: "analytics" },
-  { to: "sakhi-route", label: "SakhiRoute", color: "var(--cyan)", icon: "map" },
+  { to: "safe-route", label: "SafeRoute", color: "var(--cyan)", icon: "map" },
   { to: "reports", label: "Situation Reports", color: "var(--blue)", icon: "analytics" },
   { to: "analytics", label: "Analytics", color: "var(--blue)", icon: "analytics" },
   { to: "integrations", label: "Data Integrations", color: "var(--teal)", icon: "integrations", section: "Platform" },
